@@ -44,9 +44,6 @@ create_container() {
     # Check if CTID is available
     check_ctid_available "$CT_ID"
     
-    # Build pct create command
-    local pct_cmd="pct create ${CT_ID}"
-    
     # Select or use configured template
     local template
     if [[ -n "$CT_TEMPLATE" ]]; then
@@ -73,8 +70,6 @@ create_container() {
         log_info "Selected template: ${template}"
     fi
     
-    pct_cmd="${pct_cmd} ${template}"
-    
     # Select or use configured storage pool
     if [[ -z "$STORAGE_POOL" ]]; then
         # Use UI selector if available
@@ -88,50 +83,79 @@ create_container() {
     
     log_info "Using storage pool: ${STORAGE_POOL}"
     
-    # Add hostname
-    pct_cmd="${pct_cmd} --hostname ${CT_HOSTNAME}"
-    
-    # Add resources
-    pct_cmd="${pct_cmd} --cores ${CT_CPU}"
-    pct_cmd="${pct_cmd} --memory ${CT_RAM}"
-    pct_cmd="${pct_cmd} --swap ${CT_SWAP}"
+    # Build pct create command (ProxmoxVE pattern - build array to avoid eval issues)
+    local pct_args=(
+        "create"
+        "${CT_ID}"
+        "${template}"
+        "--hostname" "${CT_HOSTNAME}"
+        "--cores" "${CT_CPU}"
+        "--memory" "${CT_RAM}"
+        "--swap" "${CT_SWAP}"
+    )
     
     # Add rootfs with storage pool
     if [[ -n "$STORAGE_POOL" ]]; then
-        pct_cmd="${pct_cmd} --rootfs ${STORAGE_POOL}:${CT_STORAGE}"
+        pct_args+=("--rootfs" "${STORAGE_POOL}:${CT_STORAGE}")
     else
-        pct_cmd="${pct_cmd} --rootfs local-lvm:${CT_STORAGE}"
+        pct_args+=("--rootfs" "local-lvm:${CT_STORAGE}")
     fi
     
     # Add network
     if [[ "$CT_NETWORK" == "dhcp" ]]; then
-        pct_cmd="${pct_cmd} --net0 name=eth0,bridge=${CT_BRIDGE},ip=dhcp"
+        pct_args+=("--net0" "name=eth0,bridge=${CT_BRIDGE},ip=dhcp")
     else
-        pct_cmd="${pct_cmd} --net0 name=eth0,bridge=${CT_BRIDGE},ip=${CT_NETWORK}"
+        pct_args+=("--net0" "name=eth0,bridge=${CT_BRIDGE},ip=${CT_NETWORK}")
     fi
     
     # Add unprivileged flag
-    pct_cmd="${pct_cmd} --unprivileged ${CT_UNPRIVILEGED}"
+    pct_args+=("--unprivileged" "${CT_UNPRIVILEGED}")
     
     # Add onboot
-    pct_cmd="${pct_cmd} --onboot 1"
+    pct_args+=("--onboot" "1")
     
-    # Add tags if specified
+    # Add tags if specified (properly quoted to handle semicolons)
     if [[ -n "${CT_TAGS:-}" ]]; then
-        pct_cmd="${pct_cmd} --tags ${CT_TAGS}"
+        pct_args+=("--tags" "${CT_TAGS}")
     fi
     
-    # Execute the command
-    log_info "Executing: ${pct_cmd}"
-    eval "$pct_cmd"
+    # Execute the command (ProxmoxVE pattern - direct execution without eval)
+    log_info "Executing: pct ${pct_args[*]}"
+    pct "${pct_args[@]}"
     
-    # Configure TUN device for NetBird (if enabled)
+    # Configure TUN device for NetBird (if enabled) - must be done before starting
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
         configure_tun_device
     fi
     
-    # Set container notes
-    set_container_notes "$CT_ID"
+    # Start container and wait for it to be ready (ProxmoxVE pattern)
+    log_info "Starting container ${CT_ID}..."
+    pct start "$CT_ID" || {
+        log_warning "Container may already be running or failed to start"
+    }
+    
+    # Wait for container to be running (with timeout)
+    local max_wait=30
+    local waited=0
+    while [[ $waited -lt $max_wait ]]; do
+        if pct status "$CT_ID" 2>/dev/null | grep -q "status: running"; then
+            log_success "Container ${CT_ID} is running"
+            break
+        fi
+        sleep 1
+        ((waited++))
+    done
+    
+    if [[ $waited -ge $max_wait ]]; then
+        log_warning "Container ${CT_ID} did not start within ${max_wait} seconds, but continuing..."
+    fi
+    
+    # Set container notes (only if container is running)
+    if pct status "$CT_ID" 2>/dev/null | grep -q "status: running"; then
+        set_container_notes "$CT_ID"
+    else
+        log_warning "Skipping container notes - container is not running"
+    fi
     
     log_success "Container ${CT_ID} created successfully"
 }
