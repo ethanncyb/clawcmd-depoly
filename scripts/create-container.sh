@@ -114,6 +114,9 @@ create_container() {
         configure_tun_device
     fi
     
+    # Set container notes
+    set_container_notes "$CT_ID"
+    
     log_success "Container ${CT_ID} created successfully"
 }
 

@@ -104,6 +104,81 @@ build_tags() {
     echo "$tags"
 }
 
+# Set container notes/description in Proxmox
+set_container_notes() {
+    local ctid=$1
+    local hostname="${CT_HOSTNAME:-netbirdlxc}"
+    local tags="${CT_TAGS:-core-services}"
+    local update_after_services="${2:-0}"  # Set to 1 to update after services are installed
+    
+    # Get container IP if available
+    local container_ip=""
+    if pct status "$ctid" 2>/dev/null | grep -q "status: running"; then
+        container_ip=$(pct exec "$ctid" -- ip -4 addr show eth0 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 || echo "")
+    fi
+    
+    # Build notes content
+    local notes="<div align='center'>"
+    notes+="<h2>ClawCMD Cyber Club - Infrastructure Container</h2>"
+    notes+="<p><strong>Hostname:</strong> ${hostname}</p>"
+    notes+="<p><strong>Container ID:</strong> ${ctid}</p>"
+    if [[ -n "$container_ip" ]]; then
+        notes+="<p><strong>IP Address:</strong> ${container_ip}</p>"
+    fi
+    notes+="<p><strong>Tags:</strong> ${tags}</p>"
+    notes+="<hr>"
+    notes+="<h3>Services</h3>"
+    notes+="<ul style='text-align: left; display: inline-block;'>"
+    
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        notes+="<li>✅ <strong>NetBird VPN</strong> - Enabled</li>"
+        if [[ -n "${NETBIRD_MANAGEMENT_URL:-}" ]]; then
+            notes+="<li>   Management URL: ${NETBIRD_MANAGEMENT_URL}</li>"
+        fi
+        if [[ "$update_after_services" == "1" ]]; then
+            notes+="<li>   Status: Check with <code>pct exec ${ctid} -- netbird status</code></li>"
+        fi
+    else
+        notes+="<li>❌ <strong>NetBird VPN</strong> - Disabled</li>"
+    fi
+    
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        notes+="<li>✅ <strong>Cloudflare Tunnel</strong> - Enabled</li>"
+        if [[ "$update_after_services" == "1" ]]; then
+            notes+="<li>   Status: Check with <code>pct exec ${ctid} -- systemctl status cloudflared</code></li>"
+        fi
+    else
+        notes+="<li>❌ <strong>Cloudflare Tunnel</strong> - Disabled</li>"
+    fi
+    
+    notes+="</ul>"
+    notes+="<hr>"
+    notes+="<h3>Resources</h3>"
+    notes+="<ul style='text-align: left; display: inline-block;'>"
+    notes+="<li><strong>CPU:</strong> ${CT_CPU:-2} cores</li>"
+    notes+="<li><strong>RAM:</strong> ${CT_RAM:-1024} MiB</li>"
+    notes+="<li><strong>Storage:</strong> ${CT_STORAGE:-8} GB</li>"
+    notes+="<li><strong>Swap:</strong> ${CT_SWAP:-1024} MiB</li>"
+    notes+="</ul>"
+    notes+="<hr>"
+    notes+="<p><strong>Deployed:</strong> $(date '+%Y-%m-%d %H:%M:%S')</p>"
+    notes+="<p><strong>Purpose:</strong> Basic remote access infrastructure</p>"
+    notes+="<p><em>Deployed by ClawCMD Cyber Club Infrastructure Management</em></p>"
+    notes+="</div>"
+    
+    # Set the description
+    pct set "$ctid" -description "$notes" 2>/dev/null || {
+        log_warning "Failed to set container notes"
+        return 1
+    }
+    
+    if [[ "$update_after_services" == "1" ]]; then
+        log_success "Container notes updated with service information"
+    else
+        log_success "Container notes set"
+    fi
+}
+
 # Display completion message with ASCII art
 show_completion() {
     echo ""

@@ -226,6 +226,10 @@ main() {
         log_info "=== Step 3: Cloudflared installation skipped ==="
     fi
     
+    # Update container notes with final service information
+    log_info "=== Updating Container Notes ==="
+    set_container_notes "$CT_ID" 1
+    
     # Display completion information
     show_completion
     log_success "=== Deployment Complete ==="
