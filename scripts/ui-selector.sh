@@ -19,20 +19,63 @@ HOSTNAME="${HOSTNAME:-🏷️}"
 TEMPLATE="${TEMPLATE:-📋}"
 STORAGE="${STORAGE:-💿}"
 CREATING="${CREATING:-🔨}"
+DEFAULT="${DEFAULT:-⚙️}"
+ADVANCED="${ADVANCED:-🔧}"
 DGN="${DGN:-${CYAN}}"
 BGN="${BGN:-${GREEN}}"
 BOLD="${BOLD:-\033[1m}"
 CL="${CL:-${NC}}"
+BL="${BL:-${BLUE}}"
+RD="${RD:-${RED}}"
+YW="${YW:-${YELLOW}}"
 
-# Show mini header for UI mode
+# Show mini header for UI mode (similar to ProxmoxVE header_info)
 show_ui_header() {
     if [[ -t 1 ]]; then  # Only show if terminal
+        clear
         echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║${NC}            ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}            ${CYAN}║${NC}"
         echo -e "${CYAN}║${NC}                  ${YELLOW}Interactive Configuration${NC}                  ${CYAN}║${NC}"
         echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
     fi
+}
+
+# Display default settings summary (similar to build.func echo_default)
+echo_default_settings() {
+    local container_type_desc="Unprivileged"
+    if [[ "${CT_UNPRIVILEGED:-1}" == "0" ]]; then
+        container_type_desc="Privileged"
+    fi
+    
+    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID}${CL}"
+    echo -e "${OS}${BOLD}${DGN}Operating System: ${BGN}${CT_OS} (${CT_VERSION})${CL}"
+    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME}${CL}"
+    echo -e "${CONTAINERID}${BOLD}${DGN}Container Type: ${BGN}${container_type_desc}${CL}"
+    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE} GB${CL}"
+    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU}${CL}"
+    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM} MiB${CL}"
+    if [[ -n "${CT_SWAP:-}" && "${CT_SWAP:-0}" != "0" ]]; then
+        echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
+    fi
+    if [[ -n "${STORAGE_POOL:-}" ]]; then
+        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${STORAGE_POOL}${CL}"
+    fi
+    if [[ -n "${CT_TEMPLATE:-}" ]]; then
+        local template_display
+        template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display}${CL}"
+    fi
+    echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK}${CL}"
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Enabled${CL}"
+    fi
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Enabled${CL}"
+    fi
+    echo ""
+    echo -e "${CREATING}${BOLD}${BLUE}Creating container with the above settings${CL}"
+    echo ""
 }
 
 # Select template using whiptail
@@ -195,8 +238,8 @@ select_storage_pool() {
         local choice
         choice=$(whiptail --backtitle "ClawCMD Deployment" \
             --title "Select Storage Pool" \
-            --menu "Choose a storage pool for the container:" \
-            15 50 8 \
+            --menu "Choose a storage pool where the container will be saved:\n\nThis is where the container's disk will be stored." \
+            17 60 8 \
             "${menu_options[@]}" \
             --default-item "${default_item:-0}" \
             3>&1 1>&2 2>&3) || {
@@ -336,7 +379,6 @@ default_config() {
     fi
     
     show_ui_header
-    log_info "Starting quick setup configuration..."
     
     # Set defaults
     CT_ID=$(get_next_available_ctid)
@@ -354,86 +396,98 @@ default_config() {
     CLOUDFLARED_ENABLED=1
     INSTALL_PROXMOX_TOOLS=1
     
-    # Display current settings with icons (similar to build.func)
-    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID}${CL}"
-    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME}${CL}"
-    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU}${CL}"
-    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM} MiB${CL}"
-    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE} GB${CL}"
-    echo ""
+    # Display default settings (similar to build.func echo_default)
+    echo -e "${DEFAULT}${BOLD}${BLUE}Using Default Settings${CL}"
+    echo_default_settings
     
     whiptail --backtitle "ClawCMD Deployment" \
         --title "Quick Setup - Default Settings" \
-        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nStorage: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Template location\n- Storage pool" \
-        12 70
+        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nDisk Size: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Container template\n- Storage pool (where container will be saved)" \
+        13 70
     
-    # NetBird Management URL
+    # NetBird Configuration
+    msg_info "Configuring NetBird VPN..."
     NETBIRD_MANAGEMENT_URL=$(whiptail --backtitle "ClawCMD Deployment" \
         --title "NetBird Management URL" \
-        --inputbox "Enter NetBird management URL (leave blank for default):" \
-        8 60 "${NETBIRD_MANAGEMENT_URL:-}" \
+        --inputbox "Enter NetBird management URL:\n\nLeave blank to use default (https://api.netbird.io)" \
+        10 70 "${NETBIRD_MANAGEMENT_URL:-}" \
         3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
     
     # NetBird Setup Key
     NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
         --title "NetBird Setup Key" \
-        --inputbox "Enter NetBird setup key (required):" \
-        8 60 "${NETBIRD_SETUP_KEY:-}" \
+        --inputbox "Enter NetBird setup key (required):\n\nGet this from your NetBird management console." \
+        10 70 "${NETBIRD_SETUP_KEY:-}" \
         3>&1 1>&2 2>&3) || {
-        log_error "NetBird setup key is required"
+        msg_error "NetBird setup key is required"
         exit 1
     }
     
     if [[ -z "$NETBIRD_SETUP_KEY" ]]; then
-        log_error "NetBird setup key cannot be empty"
+        msg_error "NetBird setup key cannot be empty"
         exit 1
     fi
     
     echo -e "${NETWORK}${BOLD}${DGN}NetBird Setup Key: ${BGN}********${CL}"
+    if [[ -n "$NETBIRD_MANAGEMENT_URL" ]]; then
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird Management URL: ${BGN}${NETBIRD_MANAGEMENT_URL}${CL}"
+    fi
+    echo ""
     
-    # Cloudflare Tunnel Token
+    # Cloudflare Tunnel Configuration
+    msg_info "Configuring Cloudflare Tunnel..."
     CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
         --title "Cloudflare Tunnel Token" \
-        --inputbox "Enter Cloudflare tunnel token (required):" \
-        8 60 "${CLOUDFLARED_TOKEN:-}" \
+        --inputbox "Enter Cloudflare tunnel token (required):\n\nGet this from Cloudflare Zero Trust dashboard > Networks > Tunnels." \
+        10 70 "${CLOUDFLARED_TOKEN:-}" \
         3>&1 1>&2 2>&3) || {
-        log_error "Cloudflare tunnel token is required"
+        msg_error "Cloudflare tunnel token is required"
         exit 1
     }
     
     if [[ -z "$CLOUDFLARED_TOKEN" ]]; then
-        log_error "Cloudflare tunnel token cannot be empty"
+        msg_error "Cloudflare tunnel token cannot be empty"
         exit 1
     fi
     
     echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Token: ${BGN}********${CL}"
+    echo ""
     
     # Template selection with download option
     export USE_UI=1
+    msg_info "Selecting container template..."
     local selected_template
     selected_template=$(select_template)
     
     if [[ -z "$selected_template" ]]; then
-        log_error "Template selection failed. Please ensure a template is available."
+        msg_error "Template selection failed. Please ensure a template is available."
         exit 1
     fi
     
     CT_TEMPLATE="$selected_template"
+    echo ""
     
-    # Storage pool selection
+    # Storage pool selection - where container will be saved
+    msg_info "Selecting storage pool where container will be saved..."
     local selected_pool
     selected_pool=$(select_storage_pool)
     STORAGE_POOL="$selected_pool"
+    echo ""
+    
+    # Display final configuration summary
+    echo ""
+    echo -e "${CREATING}${BOLD}${BLUE}Configuration Summary${CL}"
+    echo_default_settings
     
     # Confirm settings
     local confirm_msg="Configuration Summary:\n\n"
     confirm_msg+="Container ID: ${CT_ID}\n"
     confirm_msg+="Hostname: ${CT_HOSTNAME}\n"
-    confirm_msg+="Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_STORAGE} GB Storage\n"
+    confirm_msg+="Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_STORAGE} GB Disk\n"
     local template_display
     template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
     confirm_msg+="Template: ${template_display}\n"
-    confirm_msg+="Storage Pool: ${STORAGE_POOL}\n"
+    confirm_msg+="Storage Pool: ${STORAGE_POOL} (where container will be saved)\n"
     confirm_msg+="NetBird: Enabled\n"
     confirm_msg+="Cloudflare Tunnel: Enabled\n\n"
     confirm_msg+="Proceed with deployment?"
@@ -441,12 +495,12 @@ default_config() {
     if ! whiptail --backtitle "ClawCMD Deployment" \
         --title "Confirm Deployment" \
         --yesno "$confirm_msg" \
-        15 70; then
+        16 70; then
         log_info "Deployment cancelled"
         exit 0
     fi
     
-    log_success "Quick setup configuration completed"
+    msg_ok "Quick setup configuration completed"
 }
 
 # Interactive configuration wizard
@@ -511,14 +565,19 @@ interactive_config() {
     
     # Template selection
     export USE_UI=1
+    echo ""
+    msg_info "Selecting container template..."
     local selected_template
     selected_template=$(select_template)
     CT_TEMPLATE="$selected_template"
+    echo ""
     
-    # Storage pool selection
+    # Storage pool selection - where container will be saved
+    msg_info "Selecting storage pool where container will be saved..."
     local selected_pool
     selected_pool=$(select_storage_pool)
     STORAGE_POOL="$selected_pool"
+    echo ""
     
     # NetBird
     NETBIRD_ENABLED=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -560,8 +619,11 @@ interactive_config() {
         echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Disabled${CL}"
     fi
     
+    # Display final configuration summary
     echo ""
-    echo -e "${CREATING}${BOLD}${BLUE}Creating container with the above settings${CL}"
-    log_success "Interactive configuration completed"
+    echo -e "${CREATING}${BOLD}${BLUE}Configuration Summary${CL}"
+    echo_default_settings
+    
+    msg_ok "Interactive configuration completed"
 }
 

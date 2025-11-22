@@ -185,6 +185,13 @@ main() {
         log_info "Configuration completed via UI, proceeding with deployment..."
         # Export CT_TAGS (already built in mode branches)
         export CT_TAGS
+        # Export all configuration variables for child scripts
+        export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
+        export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL
+        export CT_OS CT_VERSION CT_TEMPLATE
+        export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
+        export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
     else
         export USE_UI=0
         # CT_TAGS already exported in config file mode branch

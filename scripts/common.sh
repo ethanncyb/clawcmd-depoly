@@ -211,6 +211,29 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Message functions (similar to ProxmoxVE community scripts)
+# Icons for messages
+CROSS="${CROSS:-❌}"
+CHECKMARK="${CHECKMARK:-✅}"
+INFO="${INFO:-ℹ️}"
+WARN="${WARN:-⚠️}"
+
+msg_info() {
+    echo -e "${INFO}${BLUE} $1${NC}"
+}
+
+msg_ok() {
+    echo -e "${CHECKMARK}${GREEN} $1${NC}"
+}
+
+msg_error() {
+    echo -e "${CROSS}${RED} $1${NC}"
+}
+
+msg_warn() {
+    echo -e "${WARN}${YELLOW} $1${NC}"
+}
+
 # Check if running as root
 check_root() {
     if [[ "$(id -u)" -ne 0 ]]; then

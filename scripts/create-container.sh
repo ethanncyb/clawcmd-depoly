@@ -9,6 +9,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
 # Default values
+CT_ID="${CT_ID:-}"
+CT_HOSTNAME="${CT_HOSTNAME:-netbirdlxc}"
+CT_CPU="${CT_CPU:-2}"
+CT_RAM="${CT_RAM:-1024}"
+CT_STORAGE="${CT_STORAGE:-8}"
 CT_OS="${CT_OS:-debian}"
 CT_VERSION="${CT_VERSION:-13}"
 CT_UNPRIVILEGED="${CT_UNPRIVILEGED:-1}"
@@ -23,6 +28,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/ui-selector.sh" 2>/dev/null || true
 
 create_container() {
+    # Validate required variables
+    if [[ -z "${CT_ID:-}" ]]; then
+        log_error "CT_ID is not set. Please set CT_ID before creating container."
+        exit 1
+    fi
+    
+    if [[ -z "${CT_HOSTNAME:-}" ]]; then
+        log_error "CT_HOSTNAME is not set. Please set CT_HOSTNAME before creating container."
+        exit 1
+    fi
+    
     log_info "Creating LXC container ${CT_ID} (${CT_HOSTNAME})..."
     
     # Check if CTID is available
