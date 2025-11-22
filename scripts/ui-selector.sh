@@ -464,10 +464,36 @@ select_template_storage() {
     
     # Get all available storage pools that can store templates
     local storage_pools=""
+    
+    # Method 1: Try pvesm status with timeout
     if command -v timeout &> /dev/null; then
         storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
     else
         storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+    fi
+    
+    # Method 2: If pvesm fails, try pvesh API
+    if [[ -z "$storage_pools" ]] && command -v pvesh &> /dev/null; then
+        if command -v timeout &> /dev/null; then
+            storage_pools=$(timeout 5 pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
+        else
+            storage_pools=$(pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
+        fi
+    fi
+    
+    # Method 3: Try common storage names
+    if [[ -z "$storage_pools" ]]; then
+        log_warning "Could not detect storage pools automatically, trying common defaults..." >&2
+        for pool in local local-lvm; do
+            if pvesm status "$pool" &>/dev/null 2>&1; then
+                if [[ -z "$storage_pools" ]]; then
+                    storage_pools="$pool"
+                else
+                    storage_pools="${storage_pools}"$'\n'"$pool"
+                fi
+            fi
+        done
+        storage_pools=$(echo "$storage_pools" | grep -v '^$' || echo "")
     fi
     
     # If no storage found, use default
@@ -610,7 +636,7 @@ download_template() {
         fi
         
         # Get the latest template name (first line after sorting)
-        local latest_template
+        local latest_template=""
         if [[ -n "$available_templates" ]]; then
             latest_template=$(echo "$available_templates" | head -1 | tr -d '\n\r\t' | awk '{print $1}')
             # Ensure it's a valid template filename (contains .tar.zst or .tar.gz)
@@ -621,7 +647,7 @@ download_template() {
         fi
         
         # Try to download the latest template
-        if [[ -n "$latest_template" ]]; then
+        if [[ -n "${latest_template:-}" ]]; then
             log_info "Downloading latest template: ${latest_template} to ${template_storage}..."
             if pveam download "$template_storage" "${latest_template}" 2>/dev/null; then
                 log_success "Template downloaded successfully to ${template_storage}"

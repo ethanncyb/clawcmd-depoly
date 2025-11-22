@@ -211,7 +211,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Message functions (similar to ProxmoxVE community scripts)
+# Message functions
 # Icons for messages
 CROSS="${CROSS:-❌}"
 CHECKMARK="${CHECKMARK:-✅}"
