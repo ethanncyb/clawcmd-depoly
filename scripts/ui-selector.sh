@@ -31,8 +31,18 @@ select_template() {
     templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' || echo "")
     
     if [[ -z "$templates" ]]; then
-        log_error "No templates found. Please download a template from Proxmox web interface."
-        exit 1
+        log_warning "No templates found locally."
+        # Try to download template
+        local template_name="${preferred_os}-${preferred_version}-standard"
+        if download_template "$template_name"; then
+            # Try again after download
+            templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' || echo "")
+        fi
+        
+        if [[ -z "$templates" ]]; then
+            log_error "No templates found. Please download a template from Proxmox web interface."
+            exit 1
+        fi
     fi
     
     # Build whiptail menu options
@@ -160,6 +170,215 @@ select_storage_pool() {
             echo "$(echo "$storage_pools" | head -1)"
         fi
     fi
+}
+
+# Show mode selection menu
+select_config_mode() {
+    if ! command -v whiptail &> /dev/null; then
+        log_error "whiptail is required for interactive mode. Please install it: apt-get install whiptail"
+        exit 1
+    fi
+    
+    show_ui_header
+    
+    local choice
+    choice=$(whiptail --backtitle "ClawCMD Deployment" \
+        --title "Configuration Mode" \
+        --menu "Choose how you want to configure the deployment:" \
+        15 70 4 \
+        "default" "Quick setup (NetBird, Cloudflare, Template, Storage)" \
+        "advanced" "Full step-by-step configuration (All options)" \
+        "config" "Use existing configuration file" \
+        "cancel" "Cancel and exit" \
+        3>&1 1>&2 2>&3) || {
+        log_info "Configuration cancelled"
+        exit 0
+    }
+    
+    case "$choice" in
+        default)
+            return 0  # Return 0 for default mode
+            ;;
+        advanced)
+            return 2  # Return 2 for advanced mode
+            ;;
+        config)
+            return 1  # Return 1 for config file mode
+            ;;
+        cancel)
+            log_info "Deployment cancelled"
+            exit 0
+            ;;
+        *)
+            log_error "Invalid selection"
+            exit 1
+            ;;
+    esac
+}
+
+# Get next available container ID starting from 1000
+get_next_available_ctid() {
+    local start_id=1000
+    local current_id=$start_id
+    
+    while pct list 2>/dev/null | grep -q "^[[:space:]]*${current_id}[[:space:]]"; do
+        ((current_id++))
+    done
+    
+    echo "$current_id"
+}
+
+# Download template if it doesn't exist
+download_template() {
+    local template_name="${1:-ubuntu-22-standard}"
+    local os_type="${CT_OS:-ubuntu}"
+    local os_version="${CT_VERSION:-22}"
+    
+    log_info "Checking for template: ${template_name}..."
+    
+    # Check if template already exists
+    if pvesm list local 2>/dev/null | grep -qi "${template_name}"; then
+        log_success "Template ${template_name} already exists"
+        return 0
+    fi
+    
+    log_info "Template not found. Attempting to download..."
+    
+    # Try to download using pveam
+    if command -v pveam &> /dev/null; then
+        # Update template list
+        log_info "Updating template list..."
+        pveam update || {
+            log_warning "Failed to update template list, continuing..."
+        }
+        
+        # Try to download the template
+        local template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
+        log_info "Downloading template: ${template_full_name}..."
+        
+        if pveam download local "${template_full_name}" 2>/dev/null; then
+            log_success "Template downloaded successfully"
+            return 0
+        else
+            log_warning "Failed to download template automatically"
+            log_info "Available templates:"
+            pveam available --section system | grep -i "${os_type}" | head -5 || true
+            echo ""
+            log_info "Please download the template manually from Proxmox web interface"
+            return 1
+        fi
+    else
+        log_warning "pveam not available, cannot download template automatically"
+        return 1
+    fi
+}
+
+# Default configuration (quick setup)
+default_config() {
+    if ! command -v whiptail &> /dev/null; then
+        log_error "whiptail is required for interactive mode. Please install it: apt-get install whiptail"
+        exit 1
+    fi
+    
+    show_ui_header
+    log_info "Starting quick setup configuration..."
+    
+    # Set defaults
+    CT_ID=$(get_next_available_ctid)
+    CT_HOSTNAME="netbirdlxc"
+    CT_CPU=2
+    CT_RAM=1024
+    CT_SWAP=1024
+    CT_STORAGE=8
+    CT_OS="ubuntu"
+    CT_VERSION="22"
+    CT_BRIDGE="vmbr0"
+    CT_NETWORK="dhcp"
+    CT_UNPRIVILEGED=1
+    NETBIRD_ENABLED=1
+    CLOUDFLARED_ENABLED=1
+    INSTALL_PROXMOX_TOOLS=1
+    
+    # Display current settings
+    whiptail --backtitle "ClawCMD Deployment" \
+        --title "Quick Setup - Default Settings" \
+        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nStorage: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Template location\n- Storage pool" \
+        12 70
+    
+    # NetBird Management URL
+    NETBIRD_MANAGEMENT_URL=$(whiptail --backtitle "ClawCMD Deployment" \
+        --title "NetBird Management URL" \
+        --inputbox "Enter NetBird management URL (leave blank for default):" \
+        8 60 "${NETBIRD_MANAGEMENT_URL:-}" \
+        3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
+    
+    # NetBird Setup Key
+    NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
+        --title "NetBird Setup Key" \
+        --inputbox "Enter NetBird setup key (required):" \
+        8 60 "${NETBIRD_SETUP_KEY:-}" \
+        3>&1 1>&2 2>&3) || {
+        log_error "NetBird setup key is required"
+        exit 1
+    }
+    
+    if [[ -z "$NETBIRD_SETUP_KEY" ]]; then
+        log_error "NetBird setup key cannot be empty"
+        exit 1
+    fi
+    
+    # Cloudflare Tunnel Token
+    CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
+        --title "Cloudflare Tunnel Token" \
+        --inputbox "Enter Cloudflare tunnel token (required):" \
+        8 60 "${CLOUDFLARED_TOKEN:-}" \
+        3>&1 1>&2 2>&3) || {
+        log_error "Cloudflare tunnel token is required"
+        exit 1
+    }
+    
+    if [[ -z "$CLOUDFLARED_TOKEN" ]]; then
+        log_error "Cloudflare tunnel token cannot be empty"
+        exit 1
+    fi
+    
+    # Template selection with download option
+    export USE_UI=1
+    local selected_template
+    selected_template=$(select_template)
+    
+    if [[ -z "$selected_template" ]]; then
+        log_error "Template selection failed. Please ensure a template is available."
+        exit 1
+    fi
+    
+    CT_TEMPLATE="$selected_template"
+    
+    # Storage pool selection
+    local selected_pool
+    selected_pool=$(select_storage_pool)
+    STORAGE_POOL="$selected_pool"
+    
+    # Confirm settings
+    local confirm_msg="Configuration Summary:\n\n"
+    confirm_msg+="Container ID: ${CT_ID}\n"
+    confirm_msg+="Hostname: ${CT_HOSTNAME}\n"
+    confirm_msg+="Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_STORAGE} GB Storage\n"
+    confirm_msg+="Template: $(basename ${CT_TEMPLATE})\n"
+    confirm_msg+="Storage Pool: ${STORAGE_POOL}\n"
+    confirm_msg+="NetBird: Enabled\n"
+    confirm_msg+="Cloudflare Tunnel: Enabled\n\n"
+    confirm_msg+="Proceed with deployment?"
+    
+    if ! whiptail --backtitle "ClawCMD Deployment" \
+        --title "Confirm Deployment" \
+        --yesno "$confirm_msg" \
+        15 70; then
+        log_info "Deployment cancelled"
+        exit 0
+    fi
+    
+    log_success "Quick setup configuration completed"
 }
 
 # Interactive configuration wizard

@@ -16,15 +16,16 @@ This script automates the deployment of Ubuntu LXC containers on Proxmox VE with
 
 ```
 clawcmd-deploy/
+├── install.sh                  # One-liner installation script (for GitHub)
 ├── initial-setup.sh           # Main initial infrastructure setup script
-├── configs/
-│   ├── container.conf.example  # Configuration template
-│   └── container.conf          # Your configuration (create from example)
+├── env.conf.example           # Configuration template
+├── env.conf                   # Your configuration (create from example, gitignored)
 ├── scripts/
 │   ├── common.sh              # Common functions library
 │   ├── create-container.sh    # LXC container creation
 │   ├── install-netbird.sh    # NetBird installation
 │   ├── install-cloudflared.sh # Cloudflare Tunnel installation
+│   ├── install-proxmox-tools.sh # Proxmox host tools installation
 │   └── ui-selector.sh         # Interactive UI selection functions
 └── README.md                  # This file
 ```
@@ -42,7 +43,26 @@ This script is designed for **initial infrastructure setup** scenarios:
 
 ## Quick Start
 
-### Option 1: Interactive UI Mode (Recommended for first-time users)
+### Option 1: One-Liner Installation from GitHub (Recommended)
+
+Simply run this command on your Proxmox host:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/clawcmd-deploy/install.sh)"
+```
+
+**Note:** Replace `USERNAME/REPO` with your actual GitHub repository path.
+
+This will:
+1. Install essential tools (tmux, iftop, htop) on Proxmox host
+2. Clone the repository to `/opt/clawcmd-deploy`
+3. Automatically start the initial infrastructure setup with **interactive UI mode** (default)
+
+The script will prompt you to choose:
+- **Interactive mode**: Step-by-step configuration (default, recommended)
+- **Config file mode**: Use existing configuration file
+
+### Option 2: Manual Installation
 
 ```bash
 cd /home/user/Desktop/infra/clawcmd-deploy
@@ -55,17 +75,16 @@ This will launch a step-by-step UI interface where you can:
 - Select storage pool
 - Configure NetBird and Cloudflare Tunnel
 
-### Option 2: Configuration File Mode
+### Option 4: Configuration File Mode
 
 1. **Copy the example configuration:**
    ```bash
-   cd /home/user/Desktop/infra/clawcmd-deploy
-   cp configs/container.conf.example configs/container.conf
+   cp env.conf.example env.conf
    ```
 
 2. **Edit the configuration file:**
    ```bash
-   nano configs/container.conf
+   nano env.conf
    ```
    
    Configure at minimum:
@@ -75,15 +94,16 @@ This will launch a step-by-step UI interface where you can:
    - `CLOUDFLARED_TOKEN`: Your Cloudflare tunnel token
    - `CT_TEMPLATE`: Template name (leave empty for auto-detection)
    - `STORAGE_POOL`: Storage pool name (leave empty for auto-detection)
+   - `INSTALL_PROXMOX_TOOLS`: Set to 1 to install tmux, iftop, htop (default: 1)
 
 3. **Run the deployment:**
    ```bash
-   sudo ./initial-setup.sh
+   sudo ./initial-setup.sh -c
    ```
 
 ## Configuration File
 
-The configuration file (`configs/container.conf`) supports the following options:
+The configuration file (`env.conf`) supports the following options:
 
 ### Container Specifications
 - `CT_ID`: Container ID (must be unique, default: 1000)
@@ -120,28 +140,31 @@ The configuration file (`configs/container.conf`) supports the following options
 
 ## Usage Examples
 
-### Interactive UI Mode
-```bash
-sudo ./initial-setup.sh -i
-```
-Launches a step-by-step UI interface for configuration.
-
-### Configuration File Mode
+### Default Behavior (Interactive UI Mode)
 ```bash
 sudo ./initial-setup.sh
 ```
-Uses `configs/container.conf` for all settings.
+Launches a step-by-step UI interface. You'll be prompted to choose:
+- **Interactive mode**: Step-by-step configuration (recommended)
+- **Config file mode**: Use existing configuration file
+
+### Explicit Interactive Mode
+```bash
+sudo ./initial-setup.sh -i
+```
+Same as default, explicitly enables interactive mode.
+
+### Configuration File Mode
+```bash
+sudo ./initial-setup.sh -c
+```
+Uses `env.conf` for all settings (skips UI selection).
 
 ### Custom Configuration File
 ```bash
 sudo ./initial-setup.sh -c /path/to/custom.conf
 ```
-
-### Interactive Mode with Custom Config (for defaults)
-```bash
-sudo ./initial-setup.sh -i -c /path/to/custom.conf
-```
-Uses config file as defaults, then prompts for any missing values.
+Uses a custom configuration file.
 
 ### Individual Scripts
 
@@ -172,6 +195,8 @@ sudo bash scripts/install-cloudflared.sh
 
 ## Features
 
+- **One-Liner Installation**: Install directly from GitHub with a single command
+- **Proxmox Host Tools**: Automatically installs tmux, iftop, and htop on Proxmox host
 - **Dual Mode Operation**: 
   - **Config File Mode**: Automated deployment using configuration file
   - **Interactive UI Mode**: Step-by-step UI interface using whiptail
@@ -188,7 +213,7 @@ sudo bash scripts/install-cloudflared.sh
 To add support for additional services:
 
 1. Create a new installation script in `scripts/` (e.g., `install-myservice.sh`)
-2. Add configuration options to `configs/container.conf.example`
+2. Add configuration options to `env.conf.example`
 3. Update `initial-setup.sh` to call your new script
 4. Follow the pattern established in existing scripts
 

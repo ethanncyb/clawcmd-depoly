@@ -1,25 +1,120 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Common Functions Library
-# Reusable utilities for container deployment
+# ClawCMD Cyber Club - One-Liner Installation Script
+# This script can be run directly from GitHub to clone and deploy the infrastructure
+#
+# Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/clawcmd-deploy/install.sh)"
+#
+# This script will:
+# 1. Install essential tools (tmux, iftop, htop) on Proxmox host
+# 2. Clone the repository
+# 3. Run the initial infrastructure setup
 
 set -euo pipefail
 
-# Color codes for output
+# Colors for output
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly CYAN='\033[0;36m'
-readonly MAGENTA='\033[0;35m'
 readonly NC='\033[0m' # No Color
 
-# Display ClawCMD ASCII art header
-show_header() {
-    local clear_screen="${1:-1}"
-    if [[ "$clear_screen" == "1" ]]; then
-        clear
+# GitHub repository URL (update this with your actual repo)
+# You can override this by setting GITHUB_REPO environment variable
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/USERNAME/clawcmd-infra.git}"
+REPO_DIR="${REPO_DIR:-/opt/clawcmd-deploy}"
+
+# Repository subdirectory (if the clawcmd-deploy folder is in a subdirectory)
+REPO_SUBDIR="${REPO_SUBDIR:-clawcmd-deploy}"
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if running as root
+check_root() {
+    if [[ "$(id -u)" -ne 0 ]]; then
+        log_error "This script must be run as root"
+        exit 1
     fi
+}
+
+# Check if Proxmox VE is installed
+check_proxmox() {
+    if ! command -v pveversion &> /dev/null; then
+        log_error "Proxmox VE is not installed or not in PATH"
+        exit 1
+    fi
+}
+
+# Install essential tools on Proxmox host
+install_proxmox_tools() {
+    log_info "Installing essential tools on Proxmox host (tmux, iftop, htop)..."
+    
+    # Update package list
+    apt-get update -qq
+    
+    # Install tools
+    apt-get install -y tmux iftop htop || {
+        log_error "Failed to install tools"
+        exit 1
+    }
+    
+    log_success "Essential tools installed successfully"
+}
+
+# Clone or update repository
+setup_repository() {
+    if [[ -d "$REPO_DIR" ]]; then
+        log_warning "Repository directory already exists: $REPO_DIR"
+        read -p "Update existing repository? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Updating repository..."
+            cd "$REPO_DIR"
+            git pull || {
+                log_error "Failed to update repository"
+                exit 1
+            }
+        else
+            log_info "Using existing repository"
+        fi
+    else
+        log_info "Cloning repository to $REPO_DIR..."
+        
+        # Check if git is installed
+        if ! command -v git &> /dev/null; then
+            log_info "Installing git..."
+            apt-get update -qq
+            apt-get install -y git
+        fi
+        
+        # Clone repository
+        git clone "$GITHUB_REPO" "$REPO_DIR" || {
+            log_error "Failed to clone repository"
+            exit 1
+        }
+        
+        log_success "Repository cloned successfully"
+    fi
+}
+
+# Main installation function
+main() {
+    clear
     cat <<"EOF"
                                                                                                     
                                        @%%%%%%%@                                                    
@@ -79,163 +174,56 @@ EOF
     echo -e "${CYAN} \______  /____(____  /\/\_/  \______  /\____/|__|_|  /__|_|  (____  /___|  /\____ | ${NC}"
     echo -e "${CYAN}        \/          \/               \/             \/      \/     \/     \/      \/ ${NC}"
     echo ""
-    echo -e "${MAGENTA}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}Initial Infrastructure Setup${NC}              ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                      ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}One-Liner Installation${NC}              ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-}
-
-# Display completion message with ASCII art
-show_completion() {
+    
+    log_info "Starting ClawCMD infrastructure installation..."
     echo ""
-    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║${NC}                                                                               ${GREEN}║${NC}"
-    echo -e "${GREEN}║${NC}                    ${CYAN}✓ Deployment Completed Successfully! ✓${NC}                    ${GREEN}║${NC}"
-    echo -e "${GREEN}║${NC}                                                                               ${GREEN}║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    
+    # Check prerequisites
+    check_root
+    check_proxmox
+    
+    # Step 1: Install Proxmox tools
+    log_info "=== Step 1: Installing Proxmox Host Tools ==="
+    install_proxmox_tools
     echo ""
-}
-
-# Logging functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if running as root
-check_root() {
-    if [[ "$(id -u)" -ne 0 ]]; then
-        log_error "This script must be run as root"
-        exit 1
+    
+    # Step 2: Setup repository
+    log_info "=== Step 2: Setting up Repository ==="
+    setup_repository
+    echo ""
+    
+    # Step 3: Run initial setup
+    log_info "=== Step 3: Running Initial Infrastructure Setup ==="
+    
+    # Navigate to repository directory (handle subdirectory if needed)
+    if [[ -d "$REPO_DIR/$REPO_SUBDIR" ]]; then
+        cd "$REPO_DIR/$REPO_SUBDIR"
+    else
+        cd "$REPO_DIR"
     fi
-}
-
-# Check if Proxmox VE is installed
-check_proxmox() {
-    if ! command -v pveversion &> /dev/null; then
-        log_error "Proxmox VE is not installed or not in PATH"
-        exit 1
-    fi
-}
-
-# Check if container ID is available
-check_ctid_available() {
-    local ctid=$1
-    if pct list | grep -q "^[[:space:]]*${ctid}[[:space:]]"; then
-        log_error "Container ID ${ctid} is already in use"
-        exit 1
-    fi
-}
-
-# Wait for container to be running
-wait_for_container() {
-    local ctid=$1
-    local max_attempts=30
-    local attempt=0
     
-    log_info "Waiting for container ${ctid} to start..."
-    
-    while [[ $attempt -lt $max_attempts ]]; do
-        if pct status "$ctid" 2>/dev/null | grep -q "status: running"; then
-            log_success "Container ${ctid} is running"
-            return 0
-        fi
-        sleep 1
-        ((attempt++))
-    done
-    
-    log_error "Container ${ctid} failed to start within ${max_attempts} seconds"
-    return 1
-}
-
-# Wait for network connectivity in container
-wait_for_network() {
-    local ctid=$1
-    local max_attempts=20
-    local attempt=0
-    
-    log_info "Waiting for network connectivity in container ${ctid}..."
-    
-    while [[ $attempt -lt $max_attempts ]]; do
-        if pct exec "$ctid" -- ping -c1 -W1 8.8.8.8 &>/dev/null; then
-            log_success "Network connectivity established"
-            return 0
-        fi
-        sleep 2
-        ((attempt++))
-    done
-    
-    log_warning "Network connectivity check failed, but continuing..."
-    return 1
-}
-
-# Get next available container ID
-get_next_ctid() {
-    pvesh get /cluster/nextid 2>/dev/null || echo "100"
-}
-
-# Get next available container ID starting from 1000
-get_next_available_ctid() {
-    local start_id=1000
-    local current_id=$start_id
-    
-    while pct list 2>/dev/null | grep -q "^[[:space:]]*${current_id}[[:space:]]"; do
-        ((current_id++))
-    done
-    
-    echo "$current_id"
-}
-
-# Validate configuration file
-validate_config() {
-    local config_file=$1
-    
-    if [[ ! -f "$config_file" ]]; then
-        log_error "Configuration file not found: ${config_file}"
+    if [[ ! -f "initial-setup.sh" ]]; then
+        log_error "initial-setup.sh not found in repository"
+        log_info "Current directory: $(pwd)"
+        log_info "Repository directory: $REPO_DIR"
         exit 1
     fi
     
-    # Source the config file
-    source "$config_file"
+    chmod +x initial-setup.sh
+    chmod +x scripts/*.sh 2>/dev/null || true
     
-    # Validate required variables
-    local required_vars=("CT_ID" "CT_HOSTNAME" "CT_CPU" "CT_RAM" "CT_STORAGE")
+    log_success "Installation complete! Starting deployment..."
+    echo ""
     
-    for var in "${required_vars[@]}"; do
-        if [[ -z "${!var:-}" ]]; then
-            log_error "Required configuration variable ${var} is not set"
-            exit 1
-        fi
-    done
-    
-    # Validate numeric values
-    if ! [[ "$CT_CPU" =~ ^[0-9]+$ ]] || [[ "$CT_CPU" -lt 1 ]]; then
-        log_error "CT_CPU must be a positive integer"
-        exit 1
-    fi
-    
-    if ! [[ "$CT_RAM" =~ ^[0-9]+$ ]] || [[ "$CT_RAM" -lt 128 ]]; then
-        log_error "CT_RAM must be at least 128 MiB"
-        exit 1
-    fi
-    
-    if ! [[ "$CT_STORAGE" =~ ^[0-9]+$ ]] || [[ "$CT_STORAGE" -lt 2 ]]; then
-        log_error "CT_STORAGE must be at least 2 GB"
-        exit 1
-    fi
-    
-    log_success "Configuration file validated"
+    # Run the initial setup script (defaults to interactive mode)
+    # Pass through any arguments (user can use -c for config mode if desired)
+    exec ./initial-setup.sh "$@"
 }
+
+# Run main function
+main "$@"
 

@@ -10,14 +10,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="${SCRIPT_DIR}/configs"
 SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 
 # Source common functions
 source "${SCRIPTS_DIR}/common.sh"
 
 # Default config file
-CONFIG_FILE="${CONFIG_FILE:-${CONFIG_DIR}/container.conf}"
+CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/env.conf}"
 
 usage() {
     cat <<EOF
@@ -31,21 +30,22 @@ with NetBird (VPN) and Cloudflare Tunnel for secure remote connectivity.
 Usage: $0 [OPTIONS]
 
 Options:
-    -c, --config FILE    Path to configuration file (default: configs/container.conf)
-    -i, --interactive    Use interactive UI mode (whiptail)
+    -c, --config FILE    Use configuration file mode (default: env.conf)
+    -i, --interactive    Use interactive UI mode (default behavior)
     -h, --help           Show this help message
 
 Examples:
-    $0                    # Use config file
-    $0 -i                 # Interactive UI mode
+    $0                    # Interactive UI mode (default)
+    $0 -i                 # Interactive UI mode (explicit)
+    $0 -c                 # Use config file mode
     $0 -c /path/to/custom.conf
 
 Modes:
-    Config Mode: Uses configs/container.conf for all settings
-    Interactive Mode: Step-by-step UI interface for configuration
+    Interactive Mode (Default): Step-by-step UI interface for configuration
+    Config File Mode: Uses env.conf for all settings
 
 Configuration File:
-    Copy configs/container.conf.example to configs/container.conf and modify the values.
+    Copy env.conf.example to env.conf and modify the values.
 
 When to use this script:
     - Setting up new Proxmox infrastructure
@@ -56,17 +56,25 @@ EOF
 }
 
 main() {
-    local interactive_mode=0
+    local interactive_mode=1  # Default to interactive mode
+    local config_file_mode=0
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             -c|--config)
-                CONFIG_FILE="$2"
-                shift 2
+                config_file_mode=1
+                interactive_mode=0
+                if [[ -n "${2:-}" && ! "$2" =~ ^- ]]; then
+                    CONFIG_FILE="$2"
+                    shift 2
+                else
+                    shift
+                fi
                 ;;
             -i|--interactive)
                 interactive_mode=1
+                config_file_mode=0
                 shift
                 ;;
             -h|--help)
@@ -86,32 +94,51 @@ main() {
     check_proxmox
     
     # Show header (only in config mode, not interactive)
-    if [[ $interactive_mode -eq 0 ]]; then
+    if [[ $config_file_mode -eq 1 ]]; then
         show_header
     fi
     
-    # Interactive mode
+    # Interactive mode (default)
     if [[ $interactive_mode -eq 1 ]]; then
-        # Load config file as defaults if it exists
-        if [[ -f "$CONFIG_FILE" ]]; then
-            log_info "Loading defaults from: ${CONFIG_FILE}"
-            source "$CONFIG_FILE"
-        fi
-        
         source "${SCRIPTS_DIR}/ui-selector.sh"
-        interactive_config
         
-        # Export all variables for child scripts
-        export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
-        export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL CT_TAGS
-        export CT_OS CT_VERSION CT_TEMPLATE
-        export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
-        export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
-        export USE_UI=1
+        # Show mode selection menu
+        local mode_result
+        mode_result=$(select_config_mode; echo $?)
         
-        # Skip confirmation in interactive mode (user already confirmed in UI)
-        log_info "Configuration completed via UI, proceeding with deployment..."
-    else
+        case "$mode_result" in
+            0)
+                # User chose default/quick setup mode
+                # Load config file as defaults if it exists
+                if [[ -f "$CONFIG_FILE" ]]; then
+                    log_info "Loading defaults from: ${CONFIG_FILE}"
+                    source "$CONFIG_FILE"
+                fi
+                default_config
+                ;;
+            1)
+                # User chose config file mode
+                config_file_mode=1
+                interactive_mode=0
+                ;;
+            2)
+                # User chose advanced/interactive mode
+                # Load config file as defaults if it exists
+                if [[ -f "$CONFIG_FILE" ]]; then
+                    log_info "Loading defaults from: ${CONFIG_FILE}"
+                    source "$CONFIG_FILE"
+                fi
+                interactive_config
+                ;;
+            *)
+                log_error "Invalid mode selection"
+                exit 1
+                ;;
+        esac
+    fi
+    
+    # Config file mode
+    if [[ $config_file_mode -eq 1 ]]; then
         # Config file mode
         log_info "Loading configuration from: ${CONFIG_FILE}"
         validate_config "$CONFIG_FILE"
@@ -123,6 +150,7 @@ main() {
         export CT_OS CT_VERSION CT_TEMPLATE
         export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
         export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
         export USE_UI=0
         
         # Display deployment plan
@@ -141,6 +169,26 @@ main() {
             log_info "Deployment cancelled"
             exit 0
         fi
+    fi
+    
+    # Export variables (common for both modes)
+    if [[ $interactive_mode -eq 1 ]]; then
+        export USE_UI=1
+        # Skip confirmation in interactive mode (user already confirmed in UI)
+        log_info "Configuration completed via UI, proceeding with deployment..."
+    else
+        export USE_UI=0
+    fi
+    
+    # Step 0: Install Proxmox host tools (optional)
+    if [[ "${INSTALL_PROXMOX_TOOLS:-1}" == "1" ]]; then
+        log_info "=== Step 0: Installing Proxmox Host Tools ==="
+        if bash "${SCRIPTS_DIR}/install-proxmox-tools.sh"; then
+            log_success "Proxmox host tools installed"
+        else
+            log_warning "Failed to install Proxmox host tools, continuing..."
+        fi
+        echo ""
     fi
     
     # Step 1: Create container
