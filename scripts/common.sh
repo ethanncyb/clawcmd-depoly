@@ -84,8 +84,8 @@ EOF
     echo -e "${CYAN}        \/          \/               \/             \/      \/     \/     \/      \/ ${NC}"
     echo ""
     echo -e "${MAGENTA}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}Initial Infrastructure Setup${NC}              ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                      ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}Initial Infrastructure Setup${NC}               ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                        ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -188,7 +188,7 @@ show_completion() {
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║${NC}                                                                               ${GREEN}║${NC}"
-    echo -e "${GREEN}║${NC}                    ${CYAN}✓ Deployment Completed Successfully! ✓${NC}                    ${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}                    ${CYAN}✓ Deployment Completed Successfully! ✓${NC}                     ${GREEN}║${NC}"
     echo -e "${GREEN}║${NC}                                                                               ${GREEN}║${NC}"
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -355,6 +355,48 @@ validate_config() {
         log_error "CT_STORAGE must be at least 2 GB"
         exit 1
     fi
+    
+    # Validate template and storage pool configuration BEFORE applying defaults
+    # If both CT_TEMPLATE and STORAGE_POOL are empty in config, show error
+    local template_empty=0
+    local storage_empty=0
+    
+    if [[ -z "${CT_TEMPLATE:-}" ]]; then
+        template_empty=1
+    fi
+    
+    if [[ -z "${STORAGE_POOL:-}" ]]; then
+        storage_empty=1
+    fi
+    
+    if [[ $template_empty -eq 1 ]] && [[ $storage_empty -eq 1 ]]; then
+        log_error "Configuration error: Both CT_TEMPLATE and STORAGE_POOL cannot be empty"
+        log_error ""
+        log_error "Please set at least one of the following in your config file:"
+        log_error "  - CT_TEMPLATE: Full template path (e.g., local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst)"
+        log_error "  - STORAGE_POOL: Container storage pool (e.g., local-lvm) - where container disk will be saved"
+        log_error ""
+        log_error "Note: There are TWO different storage settings:"
+        log_error "  - TEMPLATE_STORAGE: Where templates are stored (default: local)"
+        log_error "  - STORAGE_POOL: Where container disk will be saved (default: local-lvm)"
+        log_error ""
+        log_error "Recommended: Set STORAGE_POOL=local-lvm and TEMPLATE_STORAGE=local"
+        log_error "The script will then auto-detect the latest template based on CT_OS and CT_VERSION"
+        exit 1
+    fi
+    
+    # Set defaults for optional values (after validation)
+    CT_OS="${CT_OS:-debian}"
+    CT_VERSION="${CT_VERSION:-13}"
+    CT_SWAP="${CT_SWAP:-1024}"
+    CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
+    CT_NETWORK="${CT_NETWORK:-dhcp}"
+    CT_UNPRIVILEGED="${CT_UNPRIVILEGED:-1}"
+    STORAGE_POOL="${STORAGE_POOL:-local-lvm}"
+    TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
+    NETBIRD_ENABLED="${NETBIRD_ENABLED:-0}"
+    CLOUDFLARED_ENABLED="${CLOUDFLARED_ENABLED:-0}"
+    INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
     
     log_success "Configuration file validated"
 }

@@ -93,10 +93,8 @@ main() {
     check_root
     check_proxmox
     
-    # Show header (only in config mode, not interactive)
-    if [[ $config_file_mode -eq 1 ]]; then
-        show_header
-    fi
+    # Show ASCII art header at the beginning (always)
+    show_header
     
     # Interactive mode (default)
     if [[ $interactive_mode -eq 1 ]]; then
@@ -154,7 +152,7 @@ main() {
         # Export config variables for child scripts
         export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
         export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL CT_TAGS
-        export CT_OS CT_VERSION CT_TEMPLATE
+        export CT_OS CT_VERSION CT_TEMPLATE TEMPLATE_STORAGE
         export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
         export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
         export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
@@ -164,7 +162,18 @@ main() {
         log_info "=== Deployment Plan ==="
         log_info "Container ID: ${CT_ID}"
         log_info "Hostname: ${CT_HOSTNAME}"
-        log_info "Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_SWAP} MiB SWAP, ${CT_STORAGE} GB Storage"
+        log_info "Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_SWAP} MiB SWAP, ${CT_STORAGE} GB Disk"
+        if [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
+            log_info "Template Storage: ${TEMPLATE_STORAGE} (where templates are stored)"
+        fi
+        if [[ -n "${CT_TEMPLATE:-}" ]]; then
+            local template_display
+            template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
+            log_info "Template: ${template_display}"
+        fi
+        if [[ -n "${STORAGE_POOL:-}" ]]; then
+            log_info "Container Storage Pool: ${STORAGE_POOL} (where container disk will be saved)"
+        fi
         log_info "NetBird: $([ "${NETBIRD_ENABLED:-0}" == "1" ] && echo "Enabled" || echo "Disabled")"
         log_info "Cloudflared: $([ "${CLOUDFLARED_ENABLED:-0}" == "1" ] && echo "Enabled" || echo "Disabled")"
         echo ""
@@ -188,7 +197,7 @@ main() {
         # Export all configuration variables for child scripts
         export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
         export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL
-        export CT_OS CT_VERSION CT_TEMPLATE
+        export CT_OS CT_VERSION CT_TEMPLATE TEMPLATE_STORAGE
         export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
         export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
         export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
@@ -259,7 +268,7 @@ main() {
         if [[ -z "${NETBIRD_SETUP_KEY:-}" ]]; then
             echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure NetBird: ${BLUE}pct exec ${CT_ID} -- netbird up --setup-key <KEY>${NC}     ${CYAN}║${NC}"
         else
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NetBird status: ${BLUE}pct exec ${CT_ID} -- netbird status${NC}            ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NetBird status: ${BLUE}pct exec ${CT_ID} -- netbird status${NC}                   ${CYAN}║${NC}"
         fi
     fi
     
@@ -267,7 +276,7 @@ main() {
         if [[ -z "${CLOUDFLARED_TOKEN:-}" ]]; then
             echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure Cloudflared: ${BLUE}pct exec ${CT_ID} -- cloudflared service install <TOKEN>${NC} ${CYAN}║${NC}"
         else
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}  ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}   ${CYAN}║${NC}"
         fi
     fi
     

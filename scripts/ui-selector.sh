@@ -30,9 +30,12 @@ RD="${RD:-${RED}}"
 YW="${YW:-${YELLOW}}"
 
 # Show mini header for UI mode (similar to ProxmoxVE header_info)
+# Note: This is a simpler header used during interactive configuration
+# The full ASCII art header is shown at script start
 show_ui_header() {
     if [[ -t 1 ]]; then  # Only show if terminal
-        clear
+        # Don't clear screen here - main header already cleared it
+        echo ""
         echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║${NC}            ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}            ${CYAN}║${NC}"
         echo -e "${CYAN}║${NC}                  ${YELLOW}Interactive Configuration${NC}                  ${CYAN}║${NC}"
@@ -58,13 +61,16 @@ echo_default_settings() {
     if [[ -n "${CT_SWAP:-}" && "${CT_SWAP:-0}" != "0" ]]; then
         echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     fi
-    if [[ -n "${STORAGE_POOL:-}" ]]; then
-        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${STORAGE_POOL}${CL}"
+    if [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
+        echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${TEMPLATE_STORAGE}${CL} (where templates are stored)"
     fi
     if [[ -n "${CT_TEMPLATE:-}" ]]; then
         local template_display
         template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
         echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display}${CL}"
+    fi
+    if [[ -n "${STORAGE_POOL:-}" ]]; then
+        echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${STORAGE_POOL}${CL} (where container disk will be saved)"
     fi
     echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK}${CL}"
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
@@ -82,28 +88,62 @@ echo_default_settings() {
 select_template() {
     local preferred_os="${CT_OS:-debian}"
     local preferred_version="${CT_VERSION:-13}"
+    local template_storage="${TEMPLATE_STORAGE:-local}"
     
-    log_info "Scanning available templates..." >&2
+    log_info "Scanning available templates in ${template_storage}..." >&2
     
-    # Get all available templates - ensure we only get the first column (template path)
+    # Get all available templates from the selected storage - ensure we only get the first column (template path)
     # Use timeout to prevent hanging (ProxmoxVE pattern)
     local templates=""
     if command -v timeout &> /dev/null; then
-        templates=$(timeout 5 pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+        templates=$(timeout 5 pvesm list "$template_storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
     else
-        templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+        templates=$(pvesm list "$template_storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+    fi
+    
+    # If no templates in selected storage, try all storages
+    if [[ -z "$templates" ]]; then
+        log_warning "No templates found in ${template_storage}, checking all storages..." >&2
+        local all_storages
+        if command -v timeout &> /dev/null; then
+            all_storages=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+        else
+            all_storages=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+        fi
+        
+        while IFS= read -r storage; do
+            if [[ -n "$storage" ]]; then
+                local storage_templates
+                if command -v timeout &> /dev/null; then
+                    storage_templates=$(timeout 3 pvesm list "$storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+                else
+                    storage_templates=$(pvesm list "$storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+                fi
+                if [[ -n "$storage_templates" ]]; then
+                    templates="${templates}${storage_templates}"$'\n'
+                fi
+            fi
+        done <<< "$all_storages"
+        templates=$(echo "$templates" | grep -v '^$' || echo "")
     fi
     
     if [[ -z "$templates" ]]; then
         log_warning "No templates found locally."
-        # Try to download template
+        # Select template storage location first
+        if [[ "${USE_UI:-0}" == "1" ]]; then
+            msg_info "Selecting template storage location..." >&2
+            template_storage=$(select_template_storage)
+            TEMPLATE_STORAGE="$template_storage"
+        fi
+        
+        # Try to download template to selected storage
         local template_name="${preferred_os}-${preferred_version}-standard"
         if download_template "$template_name"; then
             # Try again after download (with timeout)
             if command -v timeout &> /dev/null; then
-                templates=$(timeout 5 pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+                templates=$(timeout 5 pvesm list "$template_storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
             else
-                templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+                templates=$(pvesm list "$template_storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
             fi
         fi
         
@@ -117,28 +157,43 @@ select_template() {
     local menu_options=()
     local selected_template=""
     
-    # Try to find preferred template first (debian-13-standard_13.1-2_amd64.tar.zst)
-    local preferred_template
-    preferred_template=$(echo "$templates" | grep -i "debian-13-standard" | head -1 || echo "")
+    # Try to find preferred template - get the LATEST version (ProxmoxVE pattern)
+    # Sort templates by version number to get the most recent
+    local preferred_template=""
+    local matching_templates
+    
+    # Find all matching templates and sort by version (latest first)
+    matching_templates=$(echo "$templates" | grep -i "debian-13-standard" | sort -V -r || echo "")
     
     # If not found, try any debian-13 template
-    if [[ -z "$preferred_template" ]]; then
-        preferred_template=$(echo "$templates" | grep -i "${preferred_os}-${preferred_version}" | head -1 || echo "")
+    if [[ -z "$matching_templates" ]]; then
+        matching_templates=$(echo "$templates" | grep -i "${preferred_os}-${preferred_version}" | sort -V -r || echo "")
     fi
     
-    # Build menu from templates
+    # Get the latest (first after reverse sort)
+    if [[ -n "$matching_templates" ]]; then
+        preferred_template=$(echo "$matching_templates" | head -1)
+    fi
+    
+    # Build menu from templates - sort by version (latest first) for better UX
+    local sorted_templates
+    sorted_templates=$(echo "$templates" | sort -V -r)
+    
     while IFS= read -r template; do
         if [[ -n "$template" ]]; then
             local template_name
             template_name=$(basename "$template" | sed 's/\.tar\.zst$//' | sed 's/\.tar\.gz$//')
-            menu_options+=("$template" "$template_name")
             
-            # Set as default if it matches preferred
-            if [[ -n "$preferred_template" && "$template" == "$preferred_template" ]]; then
+            # Mark latest version
+            local display_name="$template_name"
+            if [[ "$template" == "$preferred_template" ]]; then
+                display_name="${template_name} (Latest)"
                 selected_template="$template"
             fi
+            
+            menu_options+=("$template" "$display_name")
         fi
-    done <<< "$templates"
+    done <<< "$sorted_templates"
     
     # If we have a preferred template, use it
     if [[ -n "$selected_template" && "${USE_UI:-0}" == "0" ]]; then
@@ -251,7 +306,7 @@ select_storage_pool() {
     if [[ -n "$preferred_pool" ]]; then
         if echo "$storage_pools" | grep -q "^${preferred_pool}$"; then
             if [[ "${USE_UI:-0}" == "0" ]]; then
-                echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
+                echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
                 echo "$preferred_pool"
                 return 0
             fi
@@ -306,13 +361,13 @@ select_storage_pool() {
         
         local choice
         choice=$(whiptail --backtitle "ClawCMD Deployment" \
-            --title "Select Storage Pool" \
-            --menu "Choose a storage pool where the container will be saved:\n\nThis is where the container's disk will be stored." \
-            17 70 $(( ${#menu_options[@]} / 2 + 1 )) \
+            --title "Select Container Storage Pool" \
+            --menu "Choose storage pool where the container disk will be saved:\n\nThis is different from template storage.\nThis is where the container's root filesystem will be stored." \
+            18 75 $(( ${#menu_options[@]} / 2 + 1 )) \
             "${menu_options[@]}" \
             --default-item "${default_item:-0}" \
             3>&1 1>&2 2>&3) || {
-            log_error "Storage pool selection cancelled"
+            log_error "Container storage pool selection cancelled"
             exit 1
         }
         
@@ -320,7 +375,7 @@ select_storage_pool() {
         choice=$(echo "$choice" | awk '{print $1}')
         
         if [[ -n "$choice" ]]; then
-            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}" >&2
+            echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${choice}${CL}" >&2
             echo "$choice"
         else
             log_error "Invalid storage pool selection"
@@ -329,11 +384,11 @@ select_storage_pool() {
     else
         # Use first available pool or preferred
         if [[ -n "$preferred_pool" && $(echo "$storage_pools" | grep -q "^${preferred_pool}$") ]]; then
-            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
+            echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
             echo "$preferred_pool"
         else
             local first_pool=$(echo "$storage_pools" | head -1)
-            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${first_pool}${CL}" >&2
+            echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${first_pool}${CL}" >&2
             echo "$first_pool"
         fi
     fi
@@ -395,17 +450,123 @@ get_next_available_ctid() {
     echo "$current_id"
 }
 
-# Download template if it doesn't exist
+# Select template storage location (where templates are stored)
+select_template_storage() {
+    local preferred_storage="${TEMPLATE_STORAGE:-local}"
+    
+    log_info "Scanning available storage for templates..." >&2
+    
+    # Get all available storage pools that can store templates
+    local storage_pools=""
+    if command -v timeout &> /dev/null; then
+        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+    else
+        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+    fi
+    
+    # If no storage found, use default
+    if [[ -z "$storage_pools" ]]; then
+        log_warning "No storage pools found, using default: local" >&2
+        echo "local"
+        return 0
+    fi
+    
+    # If preferred storage is set and exists, use it (unless UI is forced)
+    if [[ -n "$preferred_storage" ]]; then
+        if echo "$storage_pools" | grep -q "^${preferred_storage}$"; then
+            if [[ "${USE_UI:-0}" == "0" ]]; then
+                echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${preferred_storage}${CL}" >&2
+                echo "$preferred_storage"
+                return 0
+            fi
+        fi
+    fi
+    
+    # Show UI selection if USE_UI is enabled
+    if [[ "${USE_UI:-0}" == "1" ]]; then
+        if ! command -v whiptail &> /dev/null; then
+            log_warning "whiptail not available, using first storage: $(echo "$storage_pools" | head -1)" >&2
+            echo "$(echo "$storage_pools" | head -1)"
+            return 0
+        fi
+        
+        # Build menu options
+        local menu_options=()
+        local default_item=""
+        local item_num=0
+        
+        while IFS= read -r pool; do
+            if [[ -n "$pool" ]]; then
+                menu_options+=("$pool" "Storage Pool")
+                if [[ "$pool" == "local" ]] || [[ "$item_num" -eq 0 ]]; then
+                    default_item="$item_num"
+                fi
+                ((item_num++))
+            fi
+        done <<< "$storage_pools"
+        
+        if [[ ${#menu_options[@]} -eq 0 ]]; then
+            log_warning "No storage pools available, using default: local" >&2
+            echo "local"
+            return 0
+        fi
+        
+        local choice
+        choice=$(whiptail --backtitle "ClawCMD Deployment" \
+            --title "Select Template Storage" \
+            --menu "Choose storage location for templates:\n\nThis is where container templates will be downloaded and stored." \
+            17 70 $(( ${#menu_options[@]} / 2 + 1 )) \
+            "${menu_options[@]}" \
+            --default-item "${default_item:-0}" \
+            3>&1 1>&2 2>&3) || {
+            log_error "Template storage selection cancelled"
+            exit 1
+        }
+        
+        choice=$(echo "$choice" | awk '{print $1}')
+        if [[ -n "$choice" ]]; then
+            echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${choice}${CL}" >&2
+            echo "$choice"
+        else
+            log_error "Invalid template storage selection"
+            exit 1
+        fi
+    else
+        # Use first available pool or preferred
+        if [[ -n "$preferred_storage" && $(echo "$storage_pools" | grep -q "^${preferred_storage}$") ]]; then
+            echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${preferred_storage}${CL}" >&2
+            echo "$preferred_storage"
+        else
+            local first_pool=$(echo "$storage_pools" | head -1)
+            echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${first_pool}${CL}" >&2
+            echo "$first_pool"
+        fi
+    fi
+}
+
+# Download template if it doesn't exist (with storage selection)
 download_template() {
     local template_name="${1:-debian-13-standard}"
     local os_type="${CT_OS:-debian}"
     local os_version="${CT_VERSION:-13}"
+    local template_storage="${TEMPLATE_STORAGE:-local}"
     
     log_info "Checking for template: ${template_name}..."
     
-    # Check if template already exists
-    if pvesm list local 2>/dev/null | grep -qi "${template_name}"; then
-        log_success "Template ${template_name} already exists"
+    # Check if template already exists in any storage
+    local template_exists=0
+    if command -v timeout &> /dev/null; then
+        if timeout 5 pvesm list "$template_storage" 2>/dev/null | grep -qi "${template_name}"; then
+            template_exists=1
+        fi
+    else
+        if pvesm list "$template_storage" 2>/dev/null | grep -qi "${template_name}"; then
+            template_exists=1
+        fi
+    fi
+    
+    if [[ $template_exists -eq 1 ]]; then
+        log_success "Template ${template_name} already exists in ${template_storage}"
         return 0
     fi
     
@@ -419,28 +580,51 @@ download_template() {
             log_warning "Failed to update template list, continuing..."
         }
         
-        # Try to download the template - prefer debian-13-standard_13.1-2_amd64.tar.zst
-        local template_full_name="debian-13-standard_13.1-2_amd64.tar.zst"
-        log_info "Downloading template: ${template_full_name}..."
+        # Get the latest available template version (ProxmoxVE pattern)
+        log_info "Finding latest template version..."
+        local available_templates
+        if command -v timeout &> /dev/null; then
+            available_templates=$(timeout 10 pveam available --section system 2>/dev/null | grep -i "${os_type}-${os_version}-standard" | sort -V -r || echo "")
+        else
+            available_templates=$(pveam available --section system 2>/dev/null | grep -i "${os_type}-${os_version}-standard" | sort -V -r || echo "")
+        fi
         
-        if pveam download local "${template_full_name}" 2>/dev/null; then
-            log_success "Template downloaded successfully"
+        # Get the latest template name
+        local latest_template
+        if [[ -n "$available_templates" ]]; then
+            latest_template=$(echo "$available_templates" | head -1 | awk '{print $1}' || echo "")
+        fi
+        
+        # Try to download the latest template
+        if [[ -n "$latest_template" ]]; then
+            log_info "Downloading latest template: ${latest_template} to ${template_storage}..."
+            if pveam download "$template_storage" "${latest_template}" 2>/dev/null; then
+                log_success "Template downloaded successfully to ${template_storage}"
+                return 0
+            fi
+        fi
+        
+        # Fallback: Try specific template name
+        local template_full_name="debian-13-standard_13.1-2_amd64.tar.zst"
+        log_info "Trying specific template: ${template_full_name}..."
+        if pveam download "$template_storage" "${template_full_name}" 2>/dev/null; then
+            log_success "Template downloaded successfully to ${template_storage}"
+            return 0
+        fi
+        
+        # Last fallback: Try generic template name
+        log_warning "Latest template not found, trying generic template name..."
+        template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
+        if pveam download "$template_storage" "${template_full_name}" 2>/dev/null; then
+            log_success "Template downloaded successfully to ${template_storage}"
             return 0
         else
-            # Fallback to generic debian-13-standard
-            log_warning "Specific template not found, trying generic debian-13-standard..."
-            template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
-            if pveam download local "${template_full_name}" 2>/dev/null; then
-                log_success "Template downloaded successfully"
-                return 0
-            else
-                log_warning "Failed to download template automatically"
-                log_info "Available templates:"
-                pveam available --section system | grep -i "${os_type}" | head -5 || true
-                echo ""
-                log_info "Please download the template manually from Proxmox web interface"
-                return 1
-            fi
+            log_warning "Failed to download template automatically"
+            log_info "Available templates:"
+            pveam available --section system | grep -i "${os_type}" | head -5 || true
+            echo ""
+            log_info "Please download the template manually from Proxmox web interface"
+            return 1
         fi
     else
         log_warning "pveam not available, cannot download template automatically"
@@ -479,8 +663,8 @@ default_config() {
     
     whiptail --backtitle "ClawCMD Deployment" \
         --title "Quick Setup - Default Settings" \
-        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nDisk Size: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Container template\n- Storage pool (where container will be saved)" \
-        13 70
+        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nDisk Size: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Template storage (where templates are stored)\n- Container template\n- Container storage pool (where container disk will be saved)" \
+        15 75
     
     # NetBird Configuration
     msg_info "Configuring NetBird VPN..."
@@ -530,8 +714,15 @@ default_config() {
     echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Token: ${BGN}********${CL}"
     echo ""
     
-    # Template selection with download option
+    # Template storage selection (where templates are stored/downloaded)
     export USE_UI=1
+    msg_info "Selecting template storage location (where templates are stored)..."
+    local template_storage
+    template_storage=$(select_template_storage)
+    TEMPLATE_STORAGE="$template_storage"
+    echo ""
+    
+    # Template selection with download option
     msg_info "Selecting container template..."
     local selected_template
     selected_template=$(select_template)
@@ -544,8 +735,8 @@ default_config() {
     CT_TEMPLATE="$selected_template"
     echo ""
     
-    # Storage pool selection - where container will be saved
-    msg_info "Selecting storage pool where container will be saved..."
+    # Container storage pool selection (where container disk will be saved)
+    msg_info "Selecting container storage pool (where container disk will be saved)..."
     local selected_pool
     selected_pool=$(select_storage_pool)
     STORAGE_POOL="$selected_pool"
@@ -564,7 +755,8 @@ default_config() {
     local template_display
     template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
     confirm_msg+="Template: ${template_display}\n"
-    confirm_msg+="Storage Pool: ${STORAGE_POOL} (where container will be saved)\n"
+    confirm_msg+="Template Storage: ${TEMPLATE_STORAGE} (where templates are stored)\n"
+    confirm_msg+="Container Storage Pool: ${STORAGE_POOL} (where container disk will be saved)\n"
     confirm_msg+="NetBird: Enabled\n"
     confirm_msg+="Cloudflare Tunnel: Enabled\n\n"
     confirm_msg+="Proceed with deployment?"
@@ -640,17 +832,24 @@ interactive_config() {
         3>&1 1>&2 2>&3) || exit 1
     echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     
-    # Template selection
+    # Template storage selection (where templates are stored/downloaded)
     export USE_UI=1
     echo ""
+    msg_info "Selecting template storage location (where templates are stored)..."
+    local template_storage
+    template_storage=$(select_template_storage)
+    TEMPLATE_STORAGE="$template_storage"
+    echo ""
+    
+    # Template selection
     msg_info "Selecting container template..."
     local selected_template
     selected_template=$(select_template)
     CT_TEMPLATE="$selected_template"
     echo ""
     
-    # Storage pool selection - where container will be saved
-    msg_info "Selecting storage pool where container will be saved..."
+    # Container storage pool selection (where container disk will be saved)
+    msg_info "Selecting container storage pool (where container disk will be saved)..."
     local selected_pool
     selected_pool=$(select_storage_pool)
     STORAGE_POOL="$selected_pool"
