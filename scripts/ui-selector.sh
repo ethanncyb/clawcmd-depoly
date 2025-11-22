@@ -86,16 +86,25 @@ select_template() {
     log_info "Scanning available templates..." >&2
     
     # Get all available templates - ensure we only get the first column (template path)
-    local templates
-    templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+    # Use timeout to prevent hanging (ProxmoxVE pattern)
+    local templates=""
+    if command -v timeout &> /dev/null; then
+        templates=$(timeout 5 pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+    else
+        templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+    fi
     
     if [[ -z "$templates" ]]; then
         log_warning "No templates found locally."
         # Try to download template
         local template_name="${preferred_os}-${preferred_version}-standard"
         if download_template "$template_name"; then
-            # Try again after download
-            templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' || echo "")
+            # Try again after download (with timeout)
+            if command -v timeout &> /dev/null; then
+                templates=$(timeout 5 pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+            else
+                templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
+            fi
         fi
         
         if [[ -z "$templates" ]]; then
@@ -183,18 +192,57 @@ select_template() {
     fi
 }
 
-# Select storage pool using whiptail
+# Select storage pool using whiptail (similar to ProxmoxVE create_lxc.sh)
 select_storage_pool() {
     local preferred_pool="${STORAGE_POOL:-}"
     
     log_info "Scanning available storage pools..." >&2
     
     # Get all available storage pools (excluding templates and ISOs)
-    local storage_pools
-    storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -vE "vztmpl|iso" || echo "")
+    # Use timeout to prevent hanging, and try multiple methods
+    local storage_pools=""
+    
+    # Method 1: Try pvesm status with timeout (most reliable)
+    if command -v timeout &> /dev/null; then
+        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+    else
+        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+    fi
+    
+    # Method 2: If pvesm fails, try pvesh API (ProxmoxVE pattern)
+    if [[ -z "$storage_pools" ]] && command -v pvesh &> /dev/null; then
+        if command -v timeout &> /dev/null; then
+            storage_pools=$(timeout 5 pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
+        else
+            storage_pools=$(pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
+        fi
+    fi
+    
+    # Method 3: Try pvesm list as fallback
+    if [[ -z "$storage_pools" ]] && command -v pvesm &> /dev/null; then
+        if command -v timeout &> /dev/null; then
+            storage_pools=$(timeout 5 pvesm list 2>/dev/null | awk 'NR>1 {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+        else
+            storage_pools=$(pvesm list 2>/dev/null | awk 'NR>1 {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+        fi
+    fi
+    
+    # Method 4: Try common storage pool names as last resort
+    if [[ -z "$storage_pools" ]]; then
+        log_warning "Could not detect storage pools automatically, trying common defaults..." >&2
+        for pool in local-lvm local; do
+            if pvesm status "$pool" &>/dev/null 2>&1; then
+                if [[ -z "$storage_pools" ]]; then
+                    storage_pools="$pool"
+                else
+                    storage_pools="${storage_pools}"$'\n'"$pool"
+                fi
+            fi
+        done
+    fi
     
     if [[ -z "$storage_pools" ]]; then
-        log_warning "No storage pools found, using default: local-lvm"
+        log_warning "No storage pools found, using default: local-lvm" >&2
         echo "local-lvm"
         return 0
     fi
@@ -220,26 +268,47 @@ select_storage_pool() {
             return 0
         fi
         
-        # Build menu options
+        # Build menu options with better descriptions (ProxmoxVE pattern)
         local menu_options=()
         local default_item=""
         local item_num=0
         
         while IFS= read -r pool; do
             if [[ -n "$pool" ]]; then
-                menu_options+=("$pool" "Storage Pool")
-                if [[ "$pool" == "local-lvm" ]]; then
+                # Get storage type for better description
+                local storage_type=""
+                local storage_info=""
+                if command -v pvesm &> /dev/null; then
+                    if command -v timeout &> /dev/null; then
+                        storage_info=$(timeout 2 pvesm status "$pool" 2>/dev/null | awk 'NR==2 {print $2, $3}' || echo "")
+                    else
+                        storage_info=$(pvesm status "$pool" 2>/dev/null | awk 'NR==2 {print $2, $3}' || echo "")
+                    fi
+                    if [[ -n "$storage_info" ]]; then
+                        storage_type=" ($storage_info)"
+                    fi
+                fi
+                
+                menu_options+=("$pool" "Storage${storage_type}")
+                if [[ "$pool" == "local-lvm" ]] || [[ "$item_num" -eq 0 ]]; then
                     default_item="$item_num"
                 fi
                 ((item_num++))
             fi
         done <<< "$storage_pools"
         
+        # Check if we have any options
+        if [[ ${#menu_options[@]} -eq 0 ]]; then
+            log_warning "No storage pools available for selection, using default: local-lvm" >&2
+            echo "local-lvm"
+            return 0
+        fi
+        
         local choice
         choice=$(whiptail --backtitle "ClawCMD Deployment" \
             --title "Select Storage Pool" \
             --menu "Choose a storage pool where the container will be saved:\n\nThis is where the container's disk will be stored." \
-            17 60 8 \
+            17 70 $(( ${#menu_options[@]} / 2 + 1 )) \
             "${menu_options[@]}" \
             --default-item "${default_item:-0}" \
             3>&1 1>&2 2>&3) || {
@@ -247,8 +316,16 @@ select_storage_pool() {
             exit 1
         }
         
-        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}" >&2
-        echo "$choice"
+        # Clean choice - remove any extra whitespace
+        choice=$(echo "$choice" | awk '{print $1}')
+        
+        if [[ -n "$choice" ]]; then
+            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}" >&2
+            echo "$choice"
+        else
+            log_error "Invalid storage pool selection"
+            exit 1
+        fi
     else
         # Use first available pool or preferred
         if [[ -n "$preferred_pool" && $(echo "$storage_pools" | grep -q "^${preferred_pool}$") ]]; then
