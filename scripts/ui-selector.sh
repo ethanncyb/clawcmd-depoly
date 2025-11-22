@@ -8,6 +8,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
+# Icons for UI display (similar to build.func)
+CONTAINERID="${CONTAINERID:-📦}"
+OS="${OS:-🐧}"
+DISKSIZE="${DISKSIZE:-💾}"
+CPUCORE="${CPUCORE:-⚙️}"
+RAMSIZE="${RAMSIZE:-🧠}"
+NETWORK="${NETWORK:-🌐}"
+HOSTNAME="${HOSTNAME:-🏷️}"
+TEMPLATE="${TEMPLATE:-📋}"
+STORAGE="${STORAGE:-💿}"
+CREATING="${CREATING:-🔨}"
+DGN="${DGN:-${CYAN}}"
+BGN="${BGN:-${GREEN}}"
+BOLD="${BOLD:-\033[1m}"
+CL="${CL:-${NC}}"
+
 # Show mini header for UI mode
 show_ui_header() {
     if [[ -t 1 ]]; then  # Only show if terminal
@@ -21,8 +37,8 @@ show_ui_header() {
 
 # Select template using whiptail
 select_template() {
-    local preferred_os="${CT_OS:-ubuntu}"
-    local preferred_version="${CT_VERSION:-22}"
+    local preferred_os="${CT_OS:-debian}"
+    local preferred_version="${CT_VERSION:-13}"
     
     log_info "Scanning available templates..."
     
@@ -49,9 +65,14 @@ select_template() {
     local menu_options=()
     local selected_template=""
     
-    # Try to find preferred template first
+    # Try to find preferred template first (debian-13-standard_13.1-2_amd64.tar.zst)
     local preferred_template
-    preferred_template=$(echo "$templates" | grep -i "${preferred_os}-${preferred_version}" | head -1 || echo "")
+    preferred_template=$(echo "$templates" | grep -i "debian-13-standard" | head -1 || echo "")
+    
+    # If not found, try any debian-13 template
+    if [[ -z "$preferred_template" ]]; then
+        preferred_template=$(echo "$templates" | grep -i "${preferred_os}-${preferred_version}" | head -1 || echo "")
+    fi
     
     # Build menu from templates
     while IFS= read -r template; do
@@ -69,6 +90,7 @@ select_template() {
     
     # If we have a preferred template, use it
     if [[ -n "$selected_template" && "${USE_UI:-0}" == "0" ]]; then
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${selected_template})${CL}"
         echo "$selected_template"
         return 0
     fi
@@ -92,8 +114,10 @@ select_template() {
             exit 1
         }
         
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${choice})${CL}"
         echo "$choice"
     else
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${selected_template})${CL}"
         echo "$selected_template"
     fi
 }
@@ -118,6 +142,7 @@ select_storage_pool() {
     if [[ -n "$preferred_pool" ]]; then
         if echo "$storage_pools" | grep -q "^${preferred_pool}$"; then
             if [[ "${USE_UI:-0}" == "0" ]]; then
+                echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}"
                 echo "$preferred_pool"
                 return 0
             fi
@@ -161,13 +186,17 @@ select_storage_pool() {
             exit 1
         }
         
+        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}"
         echo "$choice"
     else
         # Use first available pool or preferred
         if [[ -n "$preferred_pool" && $(echo "$storage_pools" | grep -q "^${preferred_pool}$") ]]; then
+            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}"
             echo "$preferred_pool"
         else
-            echo "$(echo "$storage_pools" | head -1)"
+            local first_pool=$(echo "$storage_pools" | head -1)
+            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${first_pool}${CL}"
+            echo "$first_pool"
         fi
     fi
 }
@@ -230,9 +259,9 @@ get_next_available_ctid() {
 
 # Download template if it doesn't exist
 download_template() {
-    local template_name="${1:-ubuntu-22-standard}"
-    local os_type="${CT_OS:-ubuntu}"
-    local os_version="${CT_VERSION:-22}"
+    local template_name="${1:-debian-13-standard}"
+    local os_type="${CT_OS:-debian}"
+    local os_version="${CT_VERSION:-13}"
     
     log_info "Checking for template: ${template_name}..."
     
@@ -252,20 +281,28 @@ download_template() {
             log_warning "Failed to update template list, continuing..."
         }
         
-        # Try to download the template
-        local template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
+        # Try to download the template - prefer debian-13-standard_13.1-2_amd64.tar.zst
+        local template_full_name="debian-13-standard_13.1-2_amd64.tar.zst"
         log_info "Downloading template: ${template_full_name}..."
         
         if pveam download local "${template_full_name}" 2>/dev/null; then
             log_success "Template downloaded successfully"
             return 0
         else
-            log_warning "Failed to download template automatically"
-            log_info "Available templates:"
-            pveam available --section system | grep -i "${os_type}" | head -5 || true
-            echo ""
-            log_info "Please download the template manually from Proxmox web interface"
-            return 1
+            # Fallback to generic debian-13-standard
+            log_warning "Specific template not found, trying generic debian-13-standard..."
+            template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
+            if pveam download local "${template_full_name}" 2>/dev/null; then
+                log_success "Template downloaded successfully"
+                return 0
+            else
+                log_warning "Failed to download template automatically"
+                log_info "Available templates:"
+                pveam available --section system | grep -i "${os_type}" | head -5 || true
+                echo ""
+                log_info "Please download the template manually from Proxmox web interface"
+                return 1
+            fi
         fi
     else
         log_warning "pveam not available, cannot download template automatically"
@@ -290,8 +327,8 @@ default_config() {
     CT_RAM=1024
     CT_SWAP=1024
     CT_STORAGE=8
-    CT_OS="ubuntu"
-    CT_VERSION="22"
+    CT_OS="debian"
+    CT_VERSION="13"
     CT_BRIDGE="vmbr0"
     CT_NETWORK="dhcp"
     CT_UNPRIVILEGED=1
@@ -299,7 +336,14 @@ default_config() {
     CLOUDFLARED_ENABLED=1
     INSTALL_PROXMOX_TOOLS=1
     
-    # Display current settings
+    # Display current settings with icons (similar to build.func)
+    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID}${CL}"
+    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME}${CL}"
+    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU}${CL}"
+    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM} MiB${CL}"
+    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE} GB${CL}"
+    echo ""
+    
     whiptail --backtitle "ClawCMD Deployment" \
         --title "Quick Setup - Default Settings" \
         --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nStorage: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Template location\n- Storage pool" \
@@ -327,6 +371,8 @@ default_config() {
         exit 1
     fi
     
+    echo -e "${NETWORK}${BOLD}${DGN}NetBird Setup Key: ${BGN}********${CL}"
+    
     # Cloudflare Tunnel Token
     CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
         --title "Cloudflare Tunnel Token" \
@@ -341,6 +387,8 @@ default_config() {
         log_error "Cloudflare tunnel token cannot be empty"
         exit 1
     fi
+    
+    echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Token: ${BGN}********${CL}"
     
     # Template selection with download option
     export USE_UI=1
@@ -399,6 +447,7 @@ interactive_config() {
         --inputbox "Enter Container ID:" \
         8 60 "${CT_ID:-$next_id}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID}${CL}"
     
     # Hostname
     CT_HOSTNAME=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -406,6 +455,7 @@ interactive_config() {
         --inputbox "Enter container hostname:" \
         8 60 "${CT_HOSTNAME:-netbirdlxc}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME}${CL}"
     
     # CPU
     CT_CPU=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -413,6 +463,7 @@ interactive_config() {
         --inputbox "Enter number of CPU cores:" \
         8 60 "${CT_CPU:-2}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU}${CL}"
     
     # RAM
     CT_RAM=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -420,6 +471,7 @@ interactive_config() {
         --inputbox "Enter RAM in MiB:" \
         8 60 "${CT_RAM:-1024}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM} MiB${CL}"
     
     # Storage
     CT_STORAGE=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -427,6 +479,7 @@ interactive_config() {
         --inputbox "Enter storage size in GB:" \
         8 60 "${CT_STORAGE:-8}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE} GB${CL}"
     
     # Swap
     CT_SWAP=$(whiptail --backtitle "ClawCMD Deployment" \
@@ -434,6 +487,7 @@ interactive_config() {
         --inputbox "Enter swap size in MiB:" \
         8 60 "${CT_SWAP:-1024}" \
         3>&1 1>&2 2>&3) || exit 1
+    echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     
     # Template selection
     export USE_UI=1
@@ -464,6 +518,9 @@ interactive_config() {
             --inputbox "Enter NetBird management URL (leave blank for default):" \
             8 60 "${NETBIRD_MANAGEMENT_URL:-}" \
             3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Enabled${CL}"
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Disabled${CL}"
     fi
     
     # Cloudflared
@@ -478,8 +535,13 @@ interactive_config() {
             --inputbox "Enter Cloudflare tunnel token:" \
             8 60 "${CLOUDFLARED_TOKEN:-}" \
             3>&1 1>&2 2>&3) || CLOUDFLARED_TOKEN=""
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Enabled${CL}"
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Disabled${CL}"
     fi
     
+    echo ""
+    echo -e "${CREATING}${BOLD}${BLUE}Creating container with the above settings${CL}"
     log_success "Interactive configuration completed"
 }
 

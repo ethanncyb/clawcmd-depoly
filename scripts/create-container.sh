@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
 # Default values
-CT_OS="${CT_OS:-ubuntu}"
-CT_VERSION="${CT_VERSION:-22}"
+CT_OS="${CT_OS:-debian}"
+CT_VERSION="${CT_VERSION:-13}"
 CT_UNPRIVILEGED="${CT_UNPRIVILEGED:-1}"
 CT_BRIDGE="${CT_BRIDGE:-vmbr0}"
 CT_NETWORK="${CT_NETWORK:-dhcp}"
