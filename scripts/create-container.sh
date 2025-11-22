@@ -52,7 +52,8 @@ create_container() {
     else
         # Use UI selector if available, otherwise auto-detect
         if command -v select_template &> /dev/null; then
-            template=$(select_template)
+            # Capture only stdout (template path), stderr goes to terminal
+            template=$(select_template 2>/dev/null | head -1)
         else
             # Fallback to auto-detection
             local template_storage="${TEMPLATE_STORAGE:-local}"
@@ -73,11 +74,24 @@ create_container() {
     
     # Clean template path - ensure it's in correct format (storage:vztmpl/template-name.tar.zst)
     # Remove any extra whitespace, newlines, and ensure proper format
-    template=$(echo "$template" | tr -d '\n\r\t' | awk '{print $1}' | sed 's/[[:space:]]*$//' | sed 's/^[[:space:]]*//')
+    template=$(echo "$template" | \
+        tr -d '\n\r\t' | \
+        awk '{print $1}' | \
+        sed 's/[[:space:]]*$//' | \
+        sed 's/^[[:space:]]*//' | \
+        head -1)
     
     # Validate template path is not empty
     if [[ -z "$template" ]]; then
         log_error "Template path is empty after cleaning"
+        log_error "This may indicate that select_template output was invalid"
+        exit 1
+    fi
+    
+    # Validate template path doesn't contain log message patterns (safety check)
+    if [[ "$template" =~ \[(INFO|WARNING|ERROR|SUCCESS)\] ]] || [[ "$template" =~ ^(ℹ️|📋|✅|❌|⚠️) ]]; then
+        log_error "Template path appears to contain log messages: ${template}"
+        log_error "This indicates a problem with template selection output"
         exit 1
     fi
     

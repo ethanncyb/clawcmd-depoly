@@ -128,7 +128,9 @@ select_template() {
     fi
     
     if [[ -z "$templates" ]]; then
-        log_warning "No templates found locally."
+        log_warning "No templates found locally." >&2
+        msg_info "No template found. Downloading template first..." >&2
+        
         # Select template storage location first
         if [[ "${USE_UI:-0}" == "1" ]]; then
             msg_info "Selecting template storage location..." >&2
@@ -138,7 +140,9 @@ select_template() {
         
         # Try to download template to selected storage
         local template_name="${preferred_os}-${preferred_version}-standard"
-        if download_template "$template_name"; then
+        msg_info "Downloading template: ${template_name}..." >&2
+        if download_template "$template_name" >&2; then
+            msg_info "Template download completed. Scanning for downloaded template..." >&2
             # Try again after download (with timeout)
             if command -v timeout &> /dev/null; then
                 templates=$(timeout 5 pvesm list "$template_storage" 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
@@ -148,7 +152,7 @@ select_template() {
         fi
         
         if [[ -z "$templates" ]]; then
-            log_error "No templates found. Please download a template from Proxmox web interface."
+            log_error "No templates found. Please download a template from Proxmox web interface." >&2
             exit 1
         fi
     fi
@@ -197,12 +201,17 @@ select_template() {
     
     # If we have a preferred template, use it
     if [[ -n "$selected_template" && "${USE_UI:-0}" == "0" ]]; then
-        # Clean template path
-        selected_template=$(echo "$selected_template" | awk '{print $1}')
+        # Clean template path - ensure it's a valid template path
+        selected_template=$(echo "$selected_template" | awk '{print $1}' | grep -E '^[^[]+$' | head -1)
+        if [[ -z "$selected_template" ]]; then
+            log_error "Invalid template path after cleaning" >&2
+            exit 1
+        fi
         local template_display_name
         template_display_name=$(basename "$selected_template" 2>/dev/null || echo "$selected_template")
         echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
-        echo "$selected_template"
+        # Output ONLY the template path to stdout
+        echo "$selected_template" | head -1
         return 0
     fi
     
@@ -238,18 +247,24 @@ select_template() {
             local template_display_name
             template_display_name=$(basename "$choice" 2>/dev/null || echo "$choice")
             echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
-            echo "$choice"
+            # Output ONLY the template path to stdout
+            echo "$choice" | head -1
         else
-            log_error "Invalid template selection"
+            log_error "Invalid template selection" >&2
             exit 1
         fi
     else
-        # Clean template path
-        selected_template=$(echo "$selected_template" | awk '{print $1}')
+        # Clean template path - ensure it's a valid template path
+        selected_template=$(echo "$selected_template" | awk '{print $1}' | grep -E '^[^[]+$' | head -1)
+        if [[ -z "$selected_template" ]]; then
+            log_error "Invalid template path after cleaning" >&2
+            exit 1
+        fi
         local template_display_name
         template_display_name=$(basename "$selected_template" 2>/dev/null || echo "$selected_template")
         echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
-        echo "$selected_template"
+        # Output ONLY the template path to stdout
+        echo "$selected_template" | head -1
     fi
 }
 
@@ -583,7 +598,7 @@ download_template() {
     local os_version="${CT_VERSION:-13}"
     local template_storage="${TEMPLATE_STORAGE:-local}"
     
-    log_info "Checking for template: ${template_name}..."
+    log_info "Checking for template: ${template_name}..." >&2
     
     # Check if template already exists in any storage
     local template_exists=0
@@ -598,22 +613,22 @@ download_template() {
     fi
     
     if [[ $template_exists -eq 1 ]]; then
-        log_success "Template ${template_name} already exists in ${template_storage}"
+        log_success "Template ${template_name} already exists in ${template_storage}" >&2
         return 0
     fi
     
-    log_info "Template not found. Attempting to download..."
+    log_info "Template not found. Attempting to download..." >&2
     
     # Try to download using pveam
     if command -v pveam &> /dev/null; then
         # Update template list
-        log_info "Updating template list..."
-        pveam update || {
-            log_warning "Failed to update template list, continuing..."
+        log_info "Updating template list..." >&2
+        pveam update >&2 || {
+            log_warning "Failed to update template list, continuing..." >&2
         }
         
         # Get the latest available template version (ProxmoxVE pattern)
-        log_info "Finding latest template version..."
+        log_info "Finding latest template version..." >&2
         local available_templates
         if command -v timeout &> /dev/null; then
             # pveam available --section system outputs format:
@@ -648,33 +663,33 @@ download_template() {
         
         # Try to download the latest template
         if [[ -n "${latest_template:-}" ]]; then
-            log_info "Downloading latest template: ${latest_template} to ${template_storage}..."
-            if pveam download "$template_storage" "${latest_template}" 2>/dev/null; then
-                log_success "Template downloaded successfully to ${template_storage}"
+            log_info "Downloading latest template: ${latest_template} to ${template_storage}..." >&2
+            if pveam download "$template_storage" "${latest_template}" >&2; then
+                log_success "Template downloaded successfully to ${template_storage}" >&2
                 return 0
             fi
         fi
         
         # Fallback: Try specific template name
         local template_full_name="debian-13-standard_13.1-2_amd64.tar.zst"
-        log_info "Trying specific template: ${template_full_name}..."
-        if pveam download "$template_storage" "${template_full_name}" 2>/dev/null; then
-            log_success "Template downloaded successfully to ${template_storage}"
+        log_info "Trying specific template: ${template_full_name}..." >&2
+        if pveam download "$template_storage" "${template_full_name}" >&2; then
+            log_success "Template downloaded successfully to ${template_storage}" >&2
             return 0
         fi
         
         # Last fallback: Try generic template name
-        log_warning "Latest template not found, trying generic template name..."
+        log_warning "Latest template not found, trying generic template name..." >&2
         template_full_name="${os_type}-${os_version}-standard_amd64.tar.zst"
-        if pveam download "$template_storage" "${template_full_name}" 2>/dev/null; then
-            log_success "Template downloaded successfully to ${template_storage}"
+        if pveam download "$template_storage" "${template_full_name}" >&2; then
+            log_success "Template downloaded successfully to ${template_storage}" >&2
             return 0
         else
-            log_warning "Failed to download template automatically"
-            log_info "Available templates:"
-            pveam available --section system | grep -i "${os_type}" | head -5 || true
-            echo ""
-            log_info "Please download the template manually from Proxmox web interface"
+            log_warning "Failed to download template automatically" >&2
+            log_info "Available templates:" >&2
+            pveam available --section system 2>&1 | grep -i "${os_type}" | head -5 >&2 || true
+            echo "" >&2
+            log_info "Please download the template manually from Proxmox web interface" >&2
             return 1
         fi
     else
