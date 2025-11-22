@@ -28,8 +28,8 @@ CL="${CL:-${NC}}"
 show_ui_header() {
     if [[ -t 1 ]]; then  # Only show if terminal
         echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║${NC}     ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}     ${CYAN}║${NC}"
-        echo -e "${CYAN}║${NC}          ${YELLOW}Interactive Configuration${NC}          ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}            ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}            ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}                  ${YELLOW}Interactive Configuration${NC}                  ${CYAN}║${NC}"
         echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
     fi
@@ -40,11 +40,11 @@ select_template() {
     local preferred_os="${CT_OS:-debian}"
     local preferred_version="${CT_VERSION:-13}"
     
-    log_info "Scanning available templates..."
+    log_info "Scanning available templates..." >&2
     
-    # Get all available templates
+    # Get all available templates - ensure we only get the first column (template path)
     local templates
-    templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' || echo "")
+    templates=$(pvesm list local 2>/dev/null | grep -i "vztmpl" | awk '{print $1}' | grep -v '^$' || echo "")
     
     if [[ -z "$templates" ]]; then
         log_warning "No templates found locally."
@@ -90,7 +90,11 @@ select_template() {
     
     # If we have a preferred template, use it
     if [[ -n "$selected_template" && "${USE_UI:-0}" == "0" ]]; then
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${selected_template})${CL}"
+        # Clean template path
+        selected_template=$(echo "$selected_template" | awk '{print $1}')
+        local template_display_name
+        template_display_name=$(basename "$selected_template" 2>/dev/null || echo "$selected_template")
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
         echo "$selected_template"
         return 0
     fi
@@ -114,10 +118,24 @@ select_template() {
             exit 1
         }
         
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${choice})${CL}"
-        echo "$choice"
+        # Clean choice - remove any extra whitespace
+        choice=$(echo "$choice" | awk '{print $1}')
+        
+        if [[ -n "$choice" ]]; then
+            local template_display_name
+            template_display_name=$(basename "$choice" 2>/dev/null || echo "$choice")
+            echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
+            echo "$choice"
+        else
+            log_error "Invalid template selection"
+            exit 1
+        fi
     else
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}$(basename ${selected_template})${CL}"
+        # Clean template path
+        selected_template=$(echo "$selected_template" | awk '{print $1}')
+        local template_display_name
+        template_display_name=$(basename "$selected_template" 2>/dev/null || echo "$selected_template")
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
         echo "$selected_template"
     fi
 }
@@ -126,7 +144,7 @@ select_template() {
 select_storage_pool() {
     local preferred_pool="${STORAGE_POOL:-}"
     
-    log_info "Scanning available storage pools..."
+    log_info "Scanning available storage pools..." >&2
     
     # Get all available storage pools (excluding templates and ISOs)
     local storage_pools
@@ -142,7 +160,7 @@ select_storage_pool() {
     if [[ -n "$preferred_pool" ]]; then
         if echo "$storage_pools" | grep -q "^${preferred_pool}$"; then
             if [[ "${USE_UI:-0}" == "0" ]]; then
-                echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}"
+                echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
                 echo "$preferred_pool"
                 return 0
             fi
@@ -186,16 +204,16 @@ select_storage_pool() {
             exit 1
         }
         
-        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}"
+        echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${choice}${CL}" >&2
         echo "$choice"
     else
         # Use first available pool or preferred
         if [[ -n "$preferred_pool" && $(echo "$storage_pools" | grep -q "^${preferred_pool}$") ]]; then
-            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}"
+            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${preferred_pool}${CL}" >&2
             echo "$preferred_pool"
         else
             local first_pool=$(echo "$storage_pools" | head -1)
-            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${first_pool}${CL}"
+            echo -e "${STORAGE}${BOLD}${DGN}Storage Pool: ${BGN}${first_pool}${CL}" >&2
             echo "$first_pool"
         fi
     fi
@@ -412,7 +430,9 @@ default_config() {
     confirm_msg+="Container ID: ${CT_ID}\n"
     confirm_msg+="Hostname: ${CT_HOSTNAME}\n"
     confirm_msg+="Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_STORAGE} GB Storage\n"
-    confirm_msg+="Template: $(basename ${CT_TEMPLATE})\n"
+    local template_display
+    template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
+    confirm_msg+="Template: ${template_display}\n"
     confirm_msg+="Storage Pool: ${STORAGE_POOL}\n"
     confirm_msg+="NetBird: Enabled\n"
     confirm_msg+="Cloudflare Tunnel: Enabled\n\n"
