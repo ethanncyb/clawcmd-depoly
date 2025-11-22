@@ -115,6 +115,8 @@ main() {
                     source "$CONFIG_FILE"
                 fi
                 default_config
+                # Build tags after configuration
+                CT_TAGS=$(build_tags)
                 ;;
             1)
                 # User chose config file mode
@@ -129,6 +131,8 @@ main() {
                     source "$CONFIG_FILE"
                 fi
                 interactive_config
+                # Build tags after configuration
+                CT_TAGS=$(build_tags)
                 ;;
             *)
                 log_error "Invalid mode selection"
@@ -143,6 +147,9 @@ main() {
         log_info "Loading configuration from: ${CONFIG_FILE}"
         validate_config "$CONFIG_FILE"
         source "$CONFIG_FILE"
+        
+        # Build tags dynamically based on enabled services
+        CT_TAGS=$(build_tags)
         
         # Export config variables for child scripts
         export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
@@ -176,8 +183,11 @@ main() {
         export USE_UI=1
         # Skip confirmation in interactive mode (user already confirmed in UI)
         log_info "Configuration completed via UI, proceeding with deployment..."
+        # Export CT_TAGS (already built in mode branches)
+        export CT_TAGS
     else
         export USE_UI=0
+        # CT_TAGS already exported in config file mode branch
     fi
     
     # Step 0: Install Proxmox host tools (optional)

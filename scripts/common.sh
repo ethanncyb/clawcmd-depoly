@@ -86,6 +86,24 @@ EOF
     echo ""
 }
 
+# Build Proxmox tags based on enabled services
+build_tags() {
+    local base_tag="${CT_TAGS:-core-services}"
+    local tags="$base_tag"
+    
+    # Add netbird tag if enabled
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        tags="${tags};netbird"
+    fi
+    
+    # Add cloudflared tag if enabled
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        tags="${tags};cloudflared"
+    fi
+    
+    echo "$tags"
+}
+
 # Display completion message with ASCII art
 show_completion() {
     echo ""

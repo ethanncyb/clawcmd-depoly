@@ -136,7 +136,10 @@ The configuration file (`env.conf`) supports the following options:
 - `STORAGE_POOL`: Storage pool name (leave empty for auto-detection or UI selection)
 
 ### Optional Settings
-- `CT_TAGS`: Proxmox tags (semicolon-separated)
+- `CT_TAGS`: Base Proxmox tags (default: core-services). Tags are auto-generated:
+  - Always includes: `core-services`
+  - Adds `netbird` if NetBird is enabled
+  - Adds `cloudflared` if Cloudflare Tunnel is enabled
 
 ## Usage Examples
 
