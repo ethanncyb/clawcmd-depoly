@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+
+# ClawCMD Cyber Club - Initial Infrastructure Setup Script
+# Main deployment script for the club's main infrastructure
+# 
+# Purpose: First-time setup for new infrastructure or after Proxmox reset
+# This script sets up basic remote access by deploying an Ubuntu LXC container
+# with NetBird (VPN) and Cloudflare Tunnel for secure remote connectivity
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="${SCRIPT_DIR}/configs"
+SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
+
+# Source common functions
+source "${SCRIPTS_DIR}/common.sh"
+
+# Default config file
+CONFIG_FILE="${CONFIG_FILE:-${CONFIG_DIR}/container.conf}"
+
+usage() {
+    cat <<EOF
+ClawCMD Cyber Club - Initial Infrastructure Setup Script
+Main deployment script for the club's main infrastructure
+
+Purpose: First-time setup for new infrastructure or after Proxmox reset
+This script sets up basic remote access by deploying an Ubuntu LXC container
+with NetBird (VPN) and Cloudflare Tunnel for secure remote connectivity.
+
+Usage: $0 [OPTIONS]
+
+Options:
+    -c, --config FILE    Path to configuration file (default: configs/container.conf)
+    -i, --interactive    Use interactive UI mode (whiptail)
+    -h, --help           Show this help message
+
+Examples:
+    $0                    # Use config file
+    $0 -i                 # Interactive UI mode
+    $0 -c /path/to/custom.conf
+
+Modes:
+    Config Mode: Uses configs/container.conf for all settings
+    Interactive Mode: Step-by-step UI interface for configuration
+
+Configuration File:
+    Copy configs/container.conf.example to configs/container.conf and modify the values.
+
+When to use this script:
+    - Setting up new Proxmox infrastructure
+    - After wiping/resetting Proxmox
+    - Initial deployment of basic remote access services
+
+EOF
+}
+
+main() {
+    local interactive_mode=0
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--config)
+                CONFIG_FILE="$2"
+                shift 2
+                ;;
+            -i|--interactive)
+                interactive_mode=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Check prerequisites
+    check_root
+    check_proxmox
+    
+    # Show header (only in config mode, not interactive)
+    if [[ $interactive_mode -eq 0 ]]; then
+        show_header
+    fi
+    
+    # Interactive mode
+    if [[ $interactive_mode -eq 1 ]]; then
+        # Load config file as defaults if it exists
+        if [[ -f "$CONFIG_FILE" ]]; then
+            log_info "Loading defaults from: ${CONFIG_FILE}"
+            source "$CONFIG_FILE"
+        fi
+        
+        source "${SCRIPTS_DIR}/ui-selector.sh"
+        interactive_config
+        
+        # Export all variables for child scripts
+        export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
+        export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL CT_TAGS
+        export CT_OS CT_VERSION CT_TEMPLATE
+        export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
+        export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export USE_UI=1
+        
+        # Skip confirmation in interactive mode (user already confirmed in UI)
+        log_info "Configuration completed via UI, proceeding with deployment..."
+    else
+        # Config file mode
+        log_info "Loading configuration from: ${CONFIG_FILE}"
+        validate_config "$CONFIG_FILE"
+        source "$CONFIG_FILE"
+        
+        # Export config variables for child scripts
+        export CT_ID CT_HOSTNAME CT_CPU CT_RAM CT_STORAGE CT_SWAP
+        export CT_BRIDGE CT_NETWORK CT_UNPRIVILEGED STORAGE_POOL CT_TAGS
+        export CT_OS CT_VERSION CT_TEMPLATE
+        export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
+        export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export USE_UI=0
+        
+        # Display deployment plan
+        log_info "=== Deployment Plan ==="
+        log_info "Container ID: ${CT_ID}"
+        log_info "Hostname: ${CT_HOSTNAME}"
+        log_info "Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_SWAP} MiB SWAP, ${CT_STORAGE} GB Storage"
+        log_info "NetBird: $([ "${NETBIRD_ENABLED:-0}" == "1" ] && echo "Enabled" || echo "Disabled")"
+        log_info "Cloudflared: $([ "${CLOUDFLARED_ENABLED:-0}" == "1" ] && echo "Enabled" || echo "Disabled")"
+        echo ""
+        
+        # Confirm deployment
+        read -p "Proceed with deployment? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Deployment cancelled"
+            exit 0
+        fi
+    fi
+    
+    # Step 1: Create container
+    log_info "=== Step 1: Creating LXC Container ==="
+    bash "${SCRIPTS_DIR}/create-container.sh"
+    
+    # Wait for container to be ready
+    wait_for_container "$CT_ID"
+    sleep 3
+    wait_for_network "$CT_ID"
+    
+    # Step 2: Install NetBird (if enabled)
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        log_info "=== Step 2: Installing NetBird ==="
+        bash "${SCRIPTS_DIR}/install-netbird.sh"
+    else
+        log_info "=== Step 2: NetBird installation skipped ==="
+    fi
+    
+    # Step 3: Install Cloudflared (if enabled)
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        log_info "=== Step 3: Installing Cloudflared ==="
+        bash "${SCRIPTS_DIR}/install-cloudflared.sh"
+    else
+        log_info "=== Step 3: Cloudflared installation skipped ==="
+    fi
+    
+    # Display completion information
+    show_completion
+    log_success "=== Deployment Complete ==="
+    echo ""
+    log_info "Container Information:"
+    log_info "  ID: ${CT_ID}"
+    log_info "  Hostname: ${CT_HOSTNAME}"
+    
+    # Get container IP
+    local container_ip
+    container_ip=$(pct exec "$CT_ID" -- ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1 || echo "N/A")
+    log_info "  IP Address: ${container_ip}"
+    
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                              ${YELLOW}Next Steps:${NC}                                      ${CYAN}║${NC}"
+    echo -e "${CYAN}╠═══════════════════════════════════════════════════════════════════════════════╣${NC}"
+    
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        if [[ -z "${NETBIRD_SETUP_KEY:-}" ]]; then
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure NetBird: ${BLUE}pct exec ${CT_ID} -- netbird up --setup-key <KEY>${NC}     ${CYAN}║${NC}"
+        else
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NetBird status: ${BLUE}pct exec ${CT_ID} -- netbird status${NC}            ${CYAN}║${NC}"
+        fi
+    fi
+    
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        if [[ -z "${CLOUDFLARED_TOKEN:-}" ]]; then
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure Cloudflared: ${BLUE}pct exec ${CT_ID} -- cloudflared service install <TOKEN>${NC} ${CYAN}║${NC}"
+        else
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}  ${CYAN}║${NC}"
+        fi
+    fi
+    
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}Container is ready for use!${NC}"
+    echo ""
+}
+
+# Run main function
+main "$@"
+
