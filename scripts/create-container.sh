@@ -55,20 +55,41 @@ create_container() {
             template=$(select_template)
         else
             # Fallback to auto-detection
-            template=$(pvesm list local | grep -i "${CT_OS}-${CT_VERSION}" | grep -i "vztmpl" | head -1 | awk '{print $1}' || echo "")
+            local template_storage="${TEMPLATE_STORAGE:-local}"
+            template=$(pvesm list "$template_storage" 2>/dev/null | grep -i "${CT_OS}-${CT_VERSION}" | grep -i "vztmpl" | head -1 | awk '{print $1}' || echo "")
             if [[ -z "$template" ]]; then
-                template=$(pvesm list local | grep -i "${CT_OS}" | grep -i "${CT_VERSION}" | grep -i "vztmpl" | head -1 | awk '{print $1}' || echo "")
+                template=$(pvesm list "$template_storage" 2>/dev/null | grep -i "${CT_OS}" | grep -i "${CT_VERSION}" | grep -i "vztmpl" | head -1 | awk '{print $1}' || echo "")
             fi
         fi
         
         if [[ -z "$template" ]]; then
             log_error "Template not found. Please download a template from Proxmox web interface."
             log_info "Available templates:"
-            pvesm list local | grep -i "vztmpl" || true
+            pvesm list "${TEMPLATE_STORAGE:-local}" 2>/dev/null | grep -i "vztmpl" || true
             exit 1
         fi
         log_info "Selected template: ${template}"
     fi
+    
+    # Clean template path - ensure it's in correct format (storage:vztmpl/template-name.tar.zst)
+    # Remove any extra whitespace, newlines, and ensure proper format
+    template=$(echo "$template" | tr -d '\n\r\t' | awk '{print $1}' | sed 's/[[:space:]]*$//' | sed 's/^[[:space:]]*//')
+    
+    # Validate template path is not empty
+    if [[ -z "$template" ]]; then
+        log_error "Template path is empty after cleaning"
+        exit 1
+    fi
+    
+    # Validate template path length (Proxmox limit is 255 characters)
+    if [[ ${#template} -gt 255 ]]; then
+        log_error "Template path is too long (${#template} characters, max 255): ${template}"
+        log_error "Please use a shorter template path or specify CT_TEMPLATE directly"
+        exit 1
+    fi
+    
+    # Log the cleaned template path for debugging
+    log_info "Using template: ${template} (length: ${#template} characters)"
     
     # Select or use configured storage pool
     if [[ -z "$STORAGE_POOL" ]]; then

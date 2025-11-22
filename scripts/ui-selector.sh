@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/common.sh"
 
-# Icons for UI display (similar to build.func)
+# Icons for UI display
 CONTAINERID="${CONTAINERID:-📦}"
 OS="${OS:-🐧}"
 DISKSIZE="${DISKSIZE:-💾}"
@@ -29,7 +29,7 @@ BL="${BL:-${BLUE}}"
 RD="${RD:-${RED}}"
 YW="${YW:-${YELLOW}}"
 
-# Show mini header for UI mode (similar to ProxmoxVE header_info)
+# Show mini header for UI mode
 # Note: This is a simpler header used during interactive configuration
 # The full ASCII art header is shown at script start
 show_ui_header() {
@@ -44,7 +44,7 @@ show_ui_header() {
     fi
 }
 
-# Display default settings summary (similar to build.func echo_default)
+# Display default settings summary
 echo_default_settings() {
     local container_type_desc="Unprivileged"
     if [[ "${CT_UNPRIVILEGED:-1}" == "0" ]]; then
@@ -225,10 +225,16 @@ select_template() {
             exit 1
         }
         
-        # Clean choice - remove any extra whitespace
-        choice=$(echo "$choice" | awk '{print $1}')
+        # Clean choice - remove any extra whitespace and ensure proper format
+        choice=$(echo "$choice" | tr -d '\n\r\t' | awk '{print $1}' | sed 's/[[:space:]]*$//' | sed 's/^[[:space:]]*//')
         
         if [[ -n "$choice" ]]; then
+            # Validate template path length
+            if [[ ${#choice} -gt 255 ]]; then
+                log_error "Template path is too long (${#choice} characters, max 255): ${choice}" >&2
+                exit 1
+            fi
+            
             local template_display_name
             template_display_name=$(basename "$choice" 2>/dev/null || echo "$choice")
             echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display_name}${CL}" >&2
@@ -247,7 +253,7 @@ select_template() {
     fi
 }
 
-# Select storage pool using whiptail (similar to ProxmoxVE create_lxc.sh)
+# Select storage pool using whiptail
 select_storage_pool() {
     local preferred_pool="${STORAGE_POOL:-}"
     
@@ -584,15 +590,34 @@ download_template() {
         log_info "Finding latest template version..."
         local available_templates
         if command -v timeout &> /dev/null; then
-            available_templates=$(timeout 10 pveam available --section system 2>/dev/null | grep -i "${os_type}-${os_version}-standard" | sort -V -r || echo "")
+            # pveam available --section system outputs format:
+            # system
+            #   debian-13-standard_13.1-2_amd64.tar.zst  Debian 13 standard
+            # We need to filter out the "system" header and get actual template names
+            available_templates=$(timeout 10 pveam available --section system 2>/dev/null | \
+                grep -iE "\.tar\.(zst|gz)" | \
+                grep -iE "${os_type}-${os_version}-standard" | \
+                awk '{print $1}' | \
+                grep -v "^system$" | \
+                sort -V -r || echo "")
         else
-            available_templates=$(pveam available --section system 2>/dev/null | grep -i "${os_type}-${os_version}-standard" | sort -V -r || echo "")
+            available_templates=$(pveam available --section system 2>/dev/null | \
+                grep -iE "\.tar\.(zst|gz)" | \
+                grep -iE "${os_type}-${os_version}-standard" | \
+                awk '{print $1}' | \
+                grep -v "^system$" | \
+                sort -V -r || echo "")
         fi
         
-        # Get the latest template name
+        # Get the latest template name (first line after sorting)
         local latest_template
         if [[ -n "$available_templates" ]]; then
-            latest_template=$(echo "$available_templates" | head -1 | awk '{print $1}' || echo "")
+            latest_template=$(echo "$available_templates" | head -1 | tr -d '\n\r\t' | awk '{print $1}')
+            # Ensure it's a valid template filename (contains .tar.zst or .tar.gz)
+            if [[ ! "$latest_template" =~ \.tar\.(zst|gz)$ ]]; then
+                log_warning "Invalid template name format: ${latest_template}, trying fallback..." >&2
+                latest_template=""
+            fi
         fi
         
         # Try to download the latest template
@@ -657,7 +682,7 @@ default_config() {
     CLOUDFLARED_ENABLED=1
     INSTALL_PROXMOX_TOOLS=1
     
-    # Display default settings (similar to build.func echo_default)
+    # Display default settings
     echo -e "${DEFAULT}${BOLD}${BLUE}Using Default Settings${CL}"
     echo_default_settings
     

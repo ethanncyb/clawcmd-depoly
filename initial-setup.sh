@@ -226,6 +226,15 @@ main() {
     sleep 3
     wait_for_network "$CT_ID"
     
+    # Step 1.5: Install container tools (tmux, htop, iftop)
+    log_info "=== Step 1.5: Installing Container Tools ==="
+    if bash "${SCRIPTS_DIR}/install-container-tools.sh"; then
+        log_success "Container tools installed"
+    else
+        log_warning "Failed to install container tools, continuing..."
+    fi
+    echo ""
+    
     # Step 2: Install NetBird (if enabled)
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
         log_info "=== Step 2: Installing NetBird ==="
