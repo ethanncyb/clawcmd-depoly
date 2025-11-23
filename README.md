@@ -1,33 +1,34 @@
 # ClawCMD - Initial Infrastructure Setup
 
-Main deployment script for the club's main infrastructure.
+Automated deployment script for Proxmox VE LXC containers with NetBird VPN and Cloudflare Tunnel.
 
 ## Overview
 
-This is the primary deployment script for ClawCMD's main infrastructure. It provides a modular, reusable framework for initial infrastructure setup, specifically designed for:
+ClawCMD is a modular deployment framework for Proxmox VE that automates the creation and configuration of LXC containers with essential remote access services. It provides a streamlined way to deploy infrastructure containers with:
 
-- **First-time infrastructure setup** - When building new Proxmox infrastructure from scratch
-- **Post-reset deployment** - After wiping/resetting Proxmox and need to rebuild
-- **Basic remote access setup** - Deploys an Ubuntu LXC container with NetBird (VPN) and Cloudflare Tunnel for secure remote connectivity
+- **NetBird VPN** - Secure mesh VPN for remote access
+- **Cloudflare Tunnel** - Secure tunnel to Cloudflare network
+- **Container Tools** - Pre-installed utilities (tmux, htop, iftop)
 
-This script automates the deployment of Ubuntu LXC containers on Proxmox VE with automated installation of NetBird and Cloudflare Tunnel services, establishing the foundation for remote access to the infrastructure.
+This script automates the deployment of Debian LXC containers on Proxmox VE with automated installation of services, establishing the foundation for secure remote connectivity.
 
 ## Project Structure
 
 ```
 clawcmd-deploy/
-├── install.sh                  # One-liner installation script (for GitHub)
-├── initial-setup.sh           # Main initial infrastructure setup script
-├── env.conf.example           # Configuration template
-├── env.conf                   # Your configuration (create from example, gitignored)
+├── install.sh                    # One-liner installation script (for GitHub)
+├── initial-setup.sh              # Main deployment script
+├── env.conf.example              # Configuration template
+├── env.conf                      # Your configuration (create from example, gitignored)
 ├── scripts/
-│   ├── common.sh              # Common functions library
-│   ├── create-container.sh    # LXC container creation
-│   ├── install-netbird.sh    # NetBird installation
-│   ├── install-cloudflared.sh # Cloudflare Tunnel installation
-│   ├── install-proxmox-tools.sh # Proxmox host tools installation
-│   └── ui-selector.sh         # Interactive UI selection functions
-└── README.md                  # This file
+│   ├── common.sh                 # Common functions library
+│   ├── create-container.sh       # LXC container creation
+│   ├── install-netbird.sh        # NetBird installation
+│   ├── install-cloudflared.sh    # Cloudflare Tunnel installation
+│   ├── install-container-tools.sh # Container tools installation (tmux, htop, iftop)
+│   ├── install-proxmox-tools.sh  # Proxmox host tools installation
+│   └── ui-selector.sh            # Interactive UI selection functions
+└── README.md                     # This file
 ```
 
 ## When to Use This Script
@@ -48,10 +49,8 @@ This script is designed for **initial infrastructure setup** scenarios:
 Simply run this command on your Proxmox host:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/clawcmd-deploy/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ethanncyb/clawcmd-depoly/refs/heads/main/install.sh)"
 ```
-
-**Note:** Replace `USERNAME/REPO` with your actual GitHub repository path.
 
 This will:
 1. Install essential tools (tmux, iftop, htop) on Proxmox host
@@ -59,23 +58,26 @@ This will:
 3. Automatically start the initial infrastructure setup with **interactive UI mode** (default)
 
 The script will prompt you to choose:
-- **Interactive mode**: Step-by-step configuration (default, recommended)
-- **Config file mode**: Use existing configuration file
+- **Quick Setup (Default)**: Uses default settings with minimal configuration
+- **Config File Mode**: Use existing configuration file
+- **Advanced/Interactive Mode**: Step-by-step configuration with full control
 
 ### Option 2: Manual Installation
 
 ```bash
-cd /home/user/Desktop/infra/clawcmd-deploy
+cd /opt/clawcmd-deploy
 sudo ./initial-setup.sh -i
 ```
 
 This will launch a step-by-step UI interface where you can:
 - Select container ID, hostname, and resources
-- Choose template from available options
-- Select storage pool
-- Configure NetBird and Cloudflare Tunnel
+- Choose template storage location (where templates are stored)
+- Select container template (with automatic download if needed)
+- Select container storage pool (where container disk will be saved)
+- Choose services to install (NetBird, Cloudflare Tunnel, or both)
+- Configure selected services
 
-### Option 4: Configuration File Mode
+### Option 3: Configuration File Mode
 
 1. **Copy the example configuration:**
    ```bash
@@ -128,12 +130,16 @@ The configuration file (`env.conf`) supports the following options:
 - `CLOUDFLARED_TOKEN`: Cloudflare tunnel token (required if enabled)
 
 ### Template Configuration
-- `CT_OS`: Operating system type (default: ubuntu)
-- `CT_VERSION`: OS version (default: 22)
-- `CT_TEMPLATE`: Full template name (leave empty for auto-detection or UI selection)
+- `CT_OS`: Operating system type (default: debian)
+- `CT_VERSION`: OS version (default: 13)
+- `CT_TEMPLATE`: Full template path (e.g., `local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst`)
+  - Leave empty for auto-detection or UI selection
+- `TEMPLATE_STORAGE`: Storage pool where templates are stored/downloaded (default: local)
+  - This is where container templates are stored, separate from container storage
 
 ### Storage Configuration
-- `STORAGE_POOL`: Storage pool name (leave empty for auto-detection or UI selection)
+- `STORAGE_POOL`: Storage pool where container disk will be saved (default: local-lvm)
+  - This is where the container's root filesystem is stored, separate from template storage
 
 ### Optional Settings
 - `CT_TAGS`: Base Proxmox tags (default: core-services). Tags are auto-generated:
@@ -192,7 +198,7 @@ sudo bash scripts/install-cloudflared.sh
 
 - Proxmox VE 8.0+ or 9.0+
 - Root access
-- Ubuntu template available in Proxmox (will be auto-detected or can be selected via UI)
+- Debian template available in Proxmox (will be auto-detected, downloaded automatically, or can be selected via UI)
 - Network connectivity
 - `whiptail` package (for interactive UI mode): `apt-get install whiptail`
 
@@ -200,15 +206,23 @@ sudo bash scripts/install-cloudflared.sh
 
 - **One-Liner Installation**: Install directly from GitHub with a single command
 - **Proxmox Host Tools**: Automatically installs tmux, iftop, and htop on Proxmox host
-- **Dual Mode Operation**: 
+- **Container Tools**: Pre-installs tmux, htop, and iftop inside containers
+- **Multiple Configuration Modes**: 
+  - **Quick Setup**: Fast deployment with sensible defaults
   - **Config File Mode**: Automated deployment using configuration file
-  - **Interactive UI Mode**: Step-by-step UI interface using whiptail
-- **Template Selection**: Automatic detection or UI-based selection of container templates
-- **Storage Pool Selection**: Automatic detection or UI-based selection of storage pools
+  - **Advanced/Interactive Mode**: Step-by-step UI interface with full control
+- **Service Selection**: Choose which services to install (NetBird, Cloudflare Tunnel, or both)
+- **Template Management**: 
+  - Automatic template detection
+  - Automatic template download if not found
+  - UI-based template selection
+  - Separate template storage selection
+- **Storage Management**: 
+  - Separate storage pools for templates and container disks
+  - Automatic detection or UI-based selection
 - **Modular Design**: Each component is a separate script for easy maintenance
-- **Reusable**: Common functions library for shared utilities
-- **Configurable**: All settings via configuration file or interactive UI
-- **Error Handling**: Comprehensive error checking and logging
+- **Reusable Functions**: Common functions library for shared utilities
+- **Comprehensive Error Handling**: Robust error checking and logging
 - **Extensible**: Easy to add new services or modify existing ones
 
 ## Extending for Other Services
@@ -248,9 +262,29 @@ fi
 
 ## License
 
-Part of the ClawCMD infrastructure management system.
+This project is licensed under the MIT License.
+
+Copyright (c) 2024 ClawCMD
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## Support
 
-For issues or questions, contact the ClawCMD infrastructure team.
+For issues or questions, please open an issue on the GitHub repository.
 
