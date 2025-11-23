@@ -3,7 +3,7 @@
 # ClawCMD - One-Liner Installation Script
 # This script can be run directly from GitHub to clone and deploy the infrastructure
 #
-# Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/clawcmd-deploy/install.sh)"
+# Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/ethanncyb/clawcmd-depoly/refs/heads/main/install.sh)"
 #
 # This script will:
 # 1. Install essential tools (tmux, iftop, htop) on Proxmox host
@@ -22,7 +22,7 @@ readonly NC='\033[0m' # No Color
 
 # GitHub repository URL (update this with your actual repo)
 # You can override this by setting GITHUB_REPO environment variable
-GITHUB_REPO="${GITHUB_REPO:-https://github.com/USERNAME/clawcmd-infra.git}"
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethanncyb/clawcmd-depoly.git}"
 REPO_DIR="${REPO_DIR:-/opt/clawcmd-deploy}"
 
 # Repository subdirectory (if the clawcmd-deploy folder is in a subdirectory)
@@ -85,7 +85,7 @@ setup_repository() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Updating repository..."
             cd "$REPO_DIR"
-            git pull || {
+            GIT_TERMINAL_PROMPT=0 git pull || {
                 log_error "Failed to update repository"
                 exit 1
             }
@@ -102,9 +102,12 @@ setup_repository() {
             apt-get install -y git
         fi
         
-        # Clone repository
-        git clone "$GITHUB_REPO" "$REPO_DIR" || {
+        # Clone repository without authentication prompts
+        # Use GIT_TERMINAL_PROMPT=0 to prevent interactive prompts
+        # Use --depth 1 for shallow clone (faster, no history)
+        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$GITHUB_REPO" "$REPO_DIR" || {
             log_error "Failed to clone repository"
+            log_error "Make sure the repository is public or you have proper access configured"
             exit 1
         }
         
