@@ -471,6 +471,73 @@ get_next_available_ctid() {
     echo "$current_id"
 }
 
+# Select services to install (NetBird, Cloudflare Tunnel, or both)
+select_services() {
+    local netbird_selected="${NETBIRD_ENABLED:-0}"
+    local cloudflared_selected="${CLOUDFLARED_ENABLED:-0}"
+    
+    # Build checklist options
+    local checklist_options=()
+    
+    # NetBird option
+    if [[ "$netbird_selected" == "1" ]]; then
+        checklist_options+=("netbird" "NetBird VPN - Secure mesh VPN for remote access" "ON")
+    else
+        checklist_options+=("netbird" "NetBird VPN - Secure mesh VPN for remote access" "OFF")
+    fi
+    
+    # Cloudflare Tunnel option
+    if [[ "$cloudflared_selected" == "1" ]]; then
+        checklist_options+=("cloudflared" "Cloudflare Tunnel - Secure tunnel to Cloudflare network" "ON")
+    else
+        checklist_options+=("cloudflared" "Cloudflare Tunnel - Secure tunnel to Cloudflare network" "OFF")
+    fi
+    
+    if ! command -v whiptail &> /dev/null; then
+        log_warning "whiptail not available, using defaults: NetBird=ON, Cloudflare=ON" >&2
+        NETBIRD_ENABLED=1
+        CLOUDFLARED_ENABLED=1
+        return 0
+    fi
+    
+    local selected_services
+    selected_services=$(whiptail --backtitle "ClawCMD Deployment" \
+        --title "Select Services" \
+        --checklist "Choose which services to install in the container:\n\nUse SPACE to select/deselect, TAB to navigate, ENTER to confirm." \
+        15 70 2 \
+        "${checklist_options[@]}" \
+        3>&1 1>&2 2>&3) || {
+        log_error "Service selection cancelled" >&2
+        exit 1
+    }
+    
+    # Reset service flags
+    NETBIRD_ENABLED=0
+    CLOUDFLARED_ENABLED=0
+    
+    # Parse selected services
+    if echo "$selected_services" | grep -q "netbird"; then
+        NETBIRD_ENABLED=1
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Selected${CL}" >&2
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Not Selected${CL}" >&2
+    fi
+    
+    if echo "$selected_services" | grep -q "cloudflared"; then
+        CLOUDFLARED_ENABLED=1
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Selected${CL}" >&2
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Not Selected${CL}" >&2
+    fi
+    
+    # Warn if no services selected
+    if [[ "${NETBIRD_ENABLED:-0}" == "0" && "${CLOUDFLARED_ENABLED:-0}" == "0" ]]; then
+        log_warning "No services selected. Container will be created without NetBird or Cloudflare Tunnel." >&2
+    fi
+    
+    echo "" >&2
+}
+
 # Select template storage location (where templates are stored)
 select_template_storage() {
     local preferred_storage="${TEMPLATE_STORAGE:-local}"
@@ -729,56 +796,65 @@ default_config() {
     
     whiptail --backtitle "ClawCMD Deployment" \
         --title "Quick Setup - Default Settings" \
-        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nDisk Size: ${CT_STORAGE} GB\n\nYou will configure:\n- NetBird setup\n- Cloudflare Tunnel\n- Template storage (where templates are stored)\n- Container template\n- Container storage pool (where container disk will be saved)" \
+        --msgbox "Using default settings:\n\nContainer ID: ${CT_ID}\nHostname: ${CT_HOSTNAME}\nCPU: ${CT_CPU} cores\nRAM: ${CT_RAM} MiB\nDisk Size: ${CT_STORAGE} GB\n\nYou will configure:\n- Services to install (NetBird, Cloudflare Tunnel)\n- Template storage (where templates are stored)\n- Container template\n- Container storage pool (where container disk will be saved)" \
         15 75
     
-    # NetBird Configuration
-    msg_info "Configuring NetBird VPN..."
-    NETBIRD_MANAGEMENT_URL=$(whiptail --backtitle "ClawCMD Deployment" \
-        --title "NetBird Management URL" \
-        --inputbox "Enter NetBird management URL:\n\nLeave blank to use default (https://api.netbird.io)" \
-        10 70 "${NETBIRD_MANAGEMENT_URL:-}" \
-        3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
-    
-    # NetBird Setup Key
-    NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
-        --title "NetBird Setup Key" \
-        --inputbox "Enter NetBird setup key (required):\n\nGet this from your NetBird management console." \
-        10 70 "${NETBIRD_SETUP_KEY:-}" \
-        3>&1 1>&2 2>&3) || {
-        msg_error "NetBird setup key is required"
-        exit 1
-    }
-    
-    if [[ -z "$NETBIRD_SETUP_KEY" ]]; then
-        msg_error "NetBird setup key cannot be empty"
-        exit 1
-    fi
-    
-    echo -e "${NETWORK}${BOLD}${DGN}NetBird Setup Key: ${BGN}********${CL}"
-    if [[ -n "$NETBIRD_MANAGEMENT_URL" ]]; then
-        echo -e "${NETWORK}${BOLD}${DGN}NetBird Management URL: ${BGN}${NETBIRD_MANAGEMENT_URL}${CL}"
-    fi
+    # Service Selection
     echo ""
+    msg_info "Selecting services to install..."
+    select_services
     
-    # Cloudflare Tunnel Configuration
-    msg_info "Configuring Cloudflare Tunnel..."
-    CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
-        --title "Cloudflare Tunnel Token" \
-        --inputbox "Enter Cloudflare tunnel token (required):\n\nGet this from Cloudflare Zero Trust dashboard > Networks > Tunnels." \
-        10 70 "${CLOUDFLARED_TOKEN:-}" \
-        3>&1 1>&2 2>&3) || {
-        msg_error "Cloudflare tunnel token is required"
-        exit 1
-    }
-    
-    if [[ -z "$CLOUDFLARED_TOKEN" ]]; then
-        msg_error "Cloudflare tunnel token cannot be empty"
-        exit 1
+    # NetBird Configuration (only if selected)
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        msg_info "Configuring NetBird VPN..."
+        NETBIRD_MANAGEMENT_URL=$(whiptail --backtitle "ClawCMD Deployment" \
+            --title "NetBird Management URL" \
+            --inputbox "Enter NetBird management URL:\n\nLeave blank to use default (https://api.netbird.io)" \
+            10 70 "${NETBIRD_MANAGEMENT_URL:-}" \
+            3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
+        
+        # NetBird Setup Key
+        NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
+            --title "NetBird Setup Key" \
+            --inputbox "Enter NetBird setup key (required):\n\nGet this from your NetBird management console." \
+            10 70 "${NETBIRD_SETUP_KEY:-}" \
+            3>&1 1>&2 2>&3) || {
+            msg_error "NetBird setup key is required"
+            exit 1
+        }
+        
+        if [[ -z "$NETBIRD_SETUP_KEY" ]]; then
+            msg_error "NetBird setup key cannot be empty"
+            exit 1
+        fi
+        
+        echo -e "${NETWORK}${BOLD}${DGN}NetBird Setup Key: ${BGN}********${CL}"
+        if [[ -n "$NETBIRD_MANAGEMENT_URL" ]]; then
+            echo -e "${NETWORK}${BOLD}${DGN}NetBird Management URL: ${BGN}${NETBIRD_MANAGEMENT_URL}${CL}"
+        fi
+        echo ""
     fi
     
-    echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Token: ${BGN}********${CL}"
-    echo ""
+    # Cloudflare Tunnel Configuration (only if selected)
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        msg_info "Configuring Cloudflare Tunnel..."
+        CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
+            --title "Cloudflare Tunnel Token" \
+            --inputbox "Enter Cloudflare tunnel token (required):\n\nGet this from Cloudflare Zero Trust dashboard > Networks > Tunnels." \
+            10 70 "${CLOUDFLARED_TOKEN:-}" \
+            3>&1 1>&2 2>&3) || {
+            msg_error "Cloudflare tunnel token is required"
+            exit 1
+        }
+        
+        if [[ -z "$CLOUDFLARED_TOKEN" ]]; then
+            msg_error "Cloudflare tunnel token cannot be empty"
+            exit 1
+        fi
+        
+        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Token: ${BGN}********${CL}"
+        echo ""
+    fi
     
     # Template storage selection (where templates are stored/downloaded)
     export USE_UI=1
@@ -921,13 +997,12 @@ interactive_config() {
     STORAGE_POOL="$selected_pool"
     echo ""
     
-    # NetBird
-    NETBIRD_ENABLED=$(whiptail --backtitle "ClawCMD Deployment" \
-        --title "NetBird" \
-        --yesno "Install NetBird?" \
-        8 60) && NETBIRD_ENABLED=1 || NETBIRD_ENABLED=0
+    # Service Selection
+    msg_info "Selecting services to install..."
+    select_services
     
-    if [[ "$NETBIRD_ENABLED" == "1" ]]; then
+    # NetBird Configuration (only if selected)
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
         NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
             --title "NetBird Setup Key" \
             --inputbox "Enter NetBird setup key:" \
@@ -939,26 +1014,15 @@ interactive_config() {
             --inputbox "Enter NetBird management URL (leave blank for default):" \
             8 60 "${NETBIRD_MANAGEMENT_URL:-}" \
             3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
-        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Enabled${CL}"
-    else
-        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Disabled${CL}"
     fi
     
-    # Cloudflared
-    CLOUDFLARED_ENABLED=$(whiptail --backtitle "ClawCMD Deployment" \
-        --title "Cloudflare Tunnel" \
-        --yesno "Install Cloudflare Tunnel?" \
-        8 60) && CLOUDFLARED_ENABLED=1 || CLOUDFLARED_ENABLED=0
-    
-    if [[ "$CLOUDFLARED_ENABLED" == "1" ]]; then
+    # Cloudflare Tunnel Configuration (only if selected)
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
         CLOUDFLARED_TOKEN=$(whiptail --backtitle "ClawCMD Deployment" \
             --title "Cloudflare Tunnel Token" \
             --inputbox "Enter Cloudflare tunnel token:" \
             8 60 "${CLOUDFLARED_TOKEN:-}" \
             3>&1 1>&2 2>&3) || CLOUDFLARED_TOKEN=""
-        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Enabled${CL}"
-    else
-        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Disabled${CL}"
     fi
     
     # Display final configuration summary
