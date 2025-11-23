@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - NetBird Installation Script
+# ClawCMD - NetBird Installation Script
 # Installs and configures NetBird in an LXC container
 
 set -euo pipefail

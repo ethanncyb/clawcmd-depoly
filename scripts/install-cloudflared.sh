@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Cloudflare Tunnel Installation Script
+# ClawCMD - Cloudflare Tunnel Installation Script
 # Installs and configures Cloudflared tunnel in an LXC container
 
 set -euo pipefail

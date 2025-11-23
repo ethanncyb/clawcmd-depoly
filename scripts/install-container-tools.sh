@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Container Tools Installation Script
+# ClawCMD - Container Tools Installation Script
 # Installs essential tools (tmux, htop, iftop) inside an LXC container
 
 set -euo pipefail

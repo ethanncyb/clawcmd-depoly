@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - One-Liner Installation Script
+# ClawCMD - One-Liner Installation Script
 # This script can be run directly from GitHub to clone and deploy the infrastructure
 #
 # Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/USERNAME/REPO/main/clawcmd-deploy/install.sh)"
@@ -175,7 +175,7 @@ EOF
     echo -e "${CYAN}        \/          \/               \/             \/      \/     \/     \/      \/ ${NC}"
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}One-Liner Installation${NC}              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                    ${GREEN}ClawCMD${NC} - ${BLUE}One-Liner Installation${NC}                    ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - LXC Container Creation Script
+# ClawCMD - LXC Container Creation Script
 # Creates an Ubuntu LXC container with specified resources
 
 set -euo pipefail

@@ -1,10 +1,10 @@
-# ClawCMD Cyber Club - Initial Infrastructure Setup
+# ClawCMD - Initial Infrastructure Setup
 
 Main deployment script for the club's main infrastructure.
 
 ## Overview
 
-This is the primary deployment script for ClawCMD Cyber Club's main infrastructure. It provides a modular, reusable framework for initial infrastructure setup, specifically designed for:
+This is the primary deployment script for ClawCMD's main infrastructure. It provides a modular, reusable framework for initial infrastructure setup, specifically designed for:
 
 - **First-time infrastructure setup** - When building new Proxmox infrastructure from scratch
 - **Post-reset deployment** - After wiping/resetting Proxmox and need to rebuild
@@ -248,9 +248,9 @@ fi
 
 ## License
 
-Part of the ClawCMD Cyber Club infrastructure management system.
+Part of the ClawCMD infrastructure management system.
 
 ## Support
 
-For issues or questions, contact the ClawCMD Cyber Club infrastructure team.
+For issues or questions, contact the ClawCMD infrastructure team.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - UI Selection Functions
+# ClawCMD - UI Selection Functions
 # Provides whiptail-based UI for template and storage selection
 
 set -euo pipefail

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Common Functions Library
+# ClawCMD - Common Functions Library
 # Reusable utilities for container deployment
 
 set -euo pipefail
@@ -84,7 +84,7 @@ EOF
     echo -e "${CYAN}        \/          \/               \/             \/      \/     \/     \/      \/ ${NC}"
     echo ""
     echo -e "${MAGENTA}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}              ${GREEN}ClawCMD Cyber Club${NC} - ${BLUE}Initial Infrastructure Setup${NC}               ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}                    ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}                    ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                        ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -123,7 +123,7 @@ set_container_notes() {
     
     # Build notes content
     local notes="<div align='center'>"
-    notes+="<h2>ClawCMD Cyber Club - Infrastructure Container</h2>"
+    notes+="<h2>ClawCMD - Infrastructure Container</h2>"
     notes+="<p><strong>Hostname:</strong> ${hostname}</p>"
     notes+="<p><strong>Container ID:</strong> ${ctid}</p>"
     if [[ -n "$container_ip" ]]; then
@@ -167,7 +167,7 @@ set_container_notes() {
     notes+="<hr>"
     notes+="<p><strong>Deployed:</strong> $(date '+%Y-%m-%d %H:%M:%S')</p>"
     notes+="<p><strong>Purpose:</strong> Basic remote access infrastructure</p>"
-    notes+="<p><em>Deployed by ClawCMD Cyber Club Infrastructure Management</em></p>"
+    notes+="<p><em>Deployed by ClawCMD Infrastructure Management</em></p>"
     notes+="</div>"
     
     # Set the description

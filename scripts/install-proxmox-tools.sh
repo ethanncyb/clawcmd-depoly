@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Proxmox Host Tools Installation
+# ClawCMD - Proxmox Host Tools Installation
 # Installs essential tools on the Proxmox host: tmux, iftop, htop
 
 set -euo pipefail

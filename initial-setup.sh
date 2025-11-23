@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD Cyber Club - Initial Infrastructure Setup Script
+# ClawCMD - Initial Infrastructure Setup Script
 # Main deployment script for the club's main infrastructure
 # 
 # Purpose: First-time setup for new infrastructure or after Proxmox reset
@@ -20,7 +20,7 @@ CONFIG_FILE="${CONFIG_FILE:-${SCRIPT_DIR}/env.conf}"
 
 usage() {
     cat <<EOF
-ClawCMD Cyber Club - Initial Infrastructure Setup Script
+ClawCMD - Initial Infrastructure Setup Script
 Main deployment script for the club's main infrastructure
 
 Purpose: First-time setup for new infrastructure or after Proxmox reset
@@ -285,7 +285,7 @@ main() {
         if [[ -z "${CLOUDFLARED_TOKEN:-}" ]]; then
             echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure Cloudflared: ${BLUE}pct exec ${CT_ID} -- cloudflared service install <TOKEN>${NC} ${CYAN}║${NC}"
         else
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}   ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}    ${CYAN}║${NC}"
         fi
     fi
     
