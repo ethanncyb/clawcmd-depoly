@@ -51,13 +51,13 @@ echo_default_settings() {
         container_type_desc="Privileged"
     fi
     
-    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID}${CL}"
-    echo -e "${OS}${BOLD}${DGN}Operating System: ${BGN}${CT_OS} (${CT_VERSION})${CL}"
-    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME}${CL}"
+    echo -e "${CONTAINERID}${BOLD}${DGN}Container ID: ${BGN}${CT_ID:-N/A}${CL}"
+    echo -e "${OS}${BOLD}${DGN}Operating System: ${BGN}${CT_OS:-debian} (${CT_VERSION:-13})${CL}"
+    echo -e "${HOSTNAME}${BOLD}${DGN}Hostname: ${BGN}${CT_HOSTNAME:-N/A}${CL}"
     echo -e "${CONTAINERID}${BOLD}${DGN}Container Type: ${BGN}${container_type_desc}${CL}"
-    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE} GB${CL}"
-    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU}${CL}"
-    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM} MiB${CL}"
+    echo -e "${DISKSIZE}${BOLD}${DGN}Disk Size: ${BGN}${CT_STORAGE:-N/A} GB${CL}"
+    echo -e "${CPUCORE}${BOLD}${DGN}CPU Cores: ${BGN}${CT_CPU:-N/A}${CL}"
+    echo -e "${RAMSIZE}${BOLD}${DGN}RAM Size: ${BGN}${CT_RAM:-N/A} MiB${CL}"
     if [[ -n "${CT_SWAP:-}" && "${CT_SWAP:-0}" != "0" ]]; then
         echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     fi
@@ -72,7 +72,7 @@ echo_default_settings() {
     if [[ -n "${STORAGE_POOL:-}" ]]; then
         echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${STORAGE_POOL}${CL} (where container disk will be saved)"
     fi
-    echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK}${CL}"
+    echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK:-dhcp}${CL}"
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
         echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Enabled${CL}"
     fi
@@ -81,6 +81,31 @@ echo_default_settings() {
     fi
     echo ""
     echo -e "${CREATING}${BOLD}${BLUE}Creating container with the above settings${CL}"
+    echo ""
+}
+
+# Select template storage and template (reusable function for both default and interactive modes)
+select_template_with_storage() {
+    # Template storage selection (where templates are stored/downloaded)
+    export USE_UI=1
+    echo ""
+    msg_info "Selecting template storage location (where templates are stored)..."
+    local template_storage
+    template_storage=$(select_template_storage)
+    TEMPLATE_STORAGE="$template_storage"
+    echo ""
+    
+    # Template selection with download option
+    msg_info "Selecting container template..."
+    local selected_template
+    selected_template=$(select_template)
+    
+    if [[ -z "$selected_template" ]]; then
+        msg_error "Template selection failed. Please ensure a template is available."
+        exit 1
+    fi
+    
+    CT_TEMPLATE="$selected_template"
     echo ""
 }
 
@@ -131,11 +156,14 @@ select_template() {
         log_warning "No templates found locally." >&2
         msg_info "No template found. Downloading template first..." >&2
         
-        # Select template storage location first
-        if [[ "${USE_UI:-0}" == "1" ]]; then
+        # Select template storage location first (only if not already set or USE_UI is enabled)
+        if [[ -z "${TEMPLATE_STORAGE:-}" ]] && [[ "${USE_UI:-0}" == "1" ]]; then
             msg_info "Selecting template storage location..." >&2
             template_storage=$(select_template_storage)
             TEMPLATE_STORAGE="$template_storage"
+        elif [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
+            # Use already selected template storage
+            template_storage="${TEMPLATE_STORAGE}"
         fi
         
         # Try to download template to selected storage
@@ -856,26 +884,8 @@ default_config() {
         echo ""
     fi
     
-    # Template storage selection (where templates are stored/downloaded)
-    export USE_UI=1
-    msg_info "Selecting template storage location (where templates are stored)..."
-    local template_storage
-    template_storage=$(select_template_storage)
-    TEMPLATE_STORAGE="$template_storage"
-    echo ""
-    
-    # Template selection with download option
-    msg_info "Selecting container template..."
-    local selected_template
-    selected_template=$(select_template)
-    
-    if [[ -z "$selected_template" ]]; then
-        msg_error "Template selection failed. Please ensure a template is available."
-        exit 1
-    fi
-    
-    CT_TEMPLATE="$selected_template"
-    echo ""
+    # Template storage and template selection (reusable function)
+    select_template_with_storage
     
     # Container storage pool selection (where container disk will be saved)
     msg_info "Selecting container storage pool (where container disk will be saved)..."
@@ -923,6 +933,10 @@ interactive_config() {
     
     show_ui_header
     log_info "Starting interactive configuration wizard..."
+    
+    # Initialize OS and version defaults if not set
+    CT_OS="${CT_OS:-debian}"
+    CT_VERSION="${CT_VERSION:-13}"
     
     # Container ID
     local next_id
@@ -974,21 +988,8 @@ interactive_config() {
         3>&1 1>&2 2>&3) || exit 1
     echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     
-    # Template storage selection (where templates are stored/downloaded)
-    export USE_UI=1
-    echo ""
-    msg_info "Selecting template storage location (where templates are stored)..."
-    local template_storage
-    template_storage=$(select_template_storage)
-    TEMPLATE_STORAGE="$template_storage"
-    echo ""
-    
-    # Template selection
-    msg_info "Selecting container template..."
-    local selected_template
-    selected_template=$(select_template)
-    CT_TEMPLATE="$selected_template"
-    echo ""
+    # Template storage and template selection (reusable function)
+    select_template_with_storage
     
     # Container storage pool selection (where container disk will be saved)
     msg_info "Selecting container storage pool (where container disk will be saved)..."
@@ -1003,17 +1004,17 @@ interactive_config() {
     
     # NetBird Configuration (only if selected)
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
-        NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
-            --title "NetBird Setup Key" \
-            --inputbox "Enter NetBird setup key:" \
-            8 60 "${NETBIRD_SETUP_KEY:-}" \
-            3>&1 1>&2 2>&3) || NETBIRD_SETUP_KEY=""
-        
         NETBIRD_MANAGEMENT_URL=$(whiptail --backtitle "ClawCMD Deployment" \
             --title "NetBird Management URL (Optional)" \
             --inputbox "Enter NetBird management URL (leave blank for default):" \
             8 60 "${NETBIRD_MANAGEMENT_URL:-}" \
             3>&1 1>&2 2>&3) || NETBIRD_MANAGEMENT_URL=""
+        
+        NETBIRD_SETUP_KEY=$(whiptail --backtitle "ClawCMD Deployment" \
+            --title "NetBird Setup Key" \
+            --inputbox "Enter NetBird setup key:" \
+            8 60 "${NETBIRD_SETUP_KEY:-}" \
+            3>&1 1>&2 2>&3) || NETBIRD_SETUP_KEY=""
     fi
     
     # Cloudflare Tunnel Configuration (only if selected)
