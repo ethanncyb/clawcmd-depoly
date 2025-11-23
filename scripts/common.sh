@@ -84,8 +84,8 @@ EOF
     echo -e "${CYAN}        \/          \/               \/             \/      \/     \/     \/      \/ ${NC}"
     echo ""
     echo -e "${MAGENTA}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${MAGENTA}║${NC}                    ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}                    ${MAGENTA}║${NC}"
-    echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                        ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}                    ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}                     ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}║${NC}                    ${YELLOW}Basic Remote Access Deployment${NC}                             ${MAGENTA}║${NC}"
     echo -e "${MAGENTA}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }

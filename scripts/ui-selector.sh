@@ -37,8 +37,8 @@ show_ui_header() {
         # Don't clear screen here - main header already cleared it
         echo ""
         echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║${NC}            ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}            ${CYAN}║${NC}"
-        echo -e "${CYAN}║${NC}                  ${YELLOW}Interactive Configuration${NC}                  ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}            ${GREEN}ClawCMD${NC} - ${BLUE}Initial Infrastructure Setup${NC}              ${CYAN}║${NC}"
+        echo -e "${CYAN}║${NC}                  ${YELLOW}Interactive Configuration${NC}                     ${CYAN}║${NC}"
         echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
     fi
