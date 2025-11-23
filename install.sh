@@ -85,7 +85,7 @@ setup_repository() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Updating repository..."
             cd "$REPO_DIR"
-            GIT_TERMINAL_PROMPT=0 git pull || {
+            git pull || {
                 log_error "Failed to update repository"
                 exit 1
             }
@@ -102,12 +102,9 @@ setup_repository() {
             apt-get install -y git
         fi
         
-        # Clone repository without authentication prompts
-        # Use GIT_TERMINAL_PROMPT=0 to prevent interactive prompts
-        # Use --depth 1 for shallow clone (faster, no history)
-        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$GITHUB_REPO" "$REPO_DIR" || {
+        # Clone repository
+        git clone "$GITHUB_REPO" "$REPO_DIR" || {
             log_error "Failed to clone repository"
-            log_error "Make sure the repository is public or you have proper access configured"
             exit 1
         }
         
