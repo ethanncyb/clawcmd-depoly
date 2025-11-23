@@ -61,24 +61,37 @@ echo_default_settings() {
     if [[ -n "${CT_SWAP:-}" && "${CT_SWAP:-0}" != "0" ]]; then
         echo -e "${RAMSIZE}${BOLD}${DGN}Swap Size: ${BGN}${CT_SWAP} MiB${CL}"
     fi
-    if [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
-        echo -e "${STORAGE}${BOLD}${DGN}Template Storage: ${BGN}${TEMPLATE_STORAGE}${CL} (where templates are stored)"
-    fi
+    # Combine template and template storage into one line
     if [[ -n "${CT_TEMPLATE:-}" ]]; then
         local template_display
         template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_display}${CL}"
+        local template_storage_display="${TEMPLATE_STORAGE:-local}"
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_storage_display}/${template_display}${CL} (where templates are stored)"
+    elif [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${TEMPLATE_STORAGE}/N/A${CL} (where templates are stored)"
     fi
     if [[ -n "${STORAGE_POOL:-}" ]]; then
         echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${STORAGE_POOL}${CL} (where container disk will be saved)"
     fi
     echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK:-dhcp}${CL}"
+    
+    # Show services that will be installed
+    local services_list=()
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
-        echo -e "${NETWORK}${BOLD}${DGN}NetBird: ${BGN}Enabled${CL}"
+        services_list+=("netbird")
     fi
     if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
-        echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Enabled${CL}"
+        services_list+=("cloudflared")
     fi
+    
+    if [[ ${#services_list[@]} -gt 0 ]]; then
+        local services_display
+        services_display=$(IFS=,; echo "${services_list[*]}")
+        echo -e "${NETWORK}${BOLD}${DGN}Installing Services: ${BGN}${services_display}${CL}"
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}Installing Services: ${BGN}None${CL}"
+    fi
+    
     echo ""
     echo -e "${CREATING}${BOLD}${BLUE}Creating container with the above settings${CL}"
     echo ""
@@ -906,12 +919,28 @@ default_config() {
     confirm_msg+="Resources: ${CT_CPU} CPU, ${CT_RAM} MiB RAM, ${CT_STORAGE} GB Disk\n"
     local template_display
     template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
-    confirm_msg+="Template: ${template_display}\n"
-    confirm_msg+="Template Storage: ${TEMPLATE_STORAGE} (where templates are stored)\n"
+    local template_storage_display="${TEMPLATE_STORAGE:-local}"
+    confirm_msg+="Template: ${template_storage_display}/${template_display} (where templates are stored)\n"
     confirm_msg+="Container Storage Pool: ${STORAGE_POOL} (where container disk will be saved)\n"
-    confirm_msg+="NetBird: Enabled\n"
-    confirm_msg+="Cloudflare Tunnel: Enabled\n\n"
-    confirm_msg+="Proceed with deployment?"
+    
+    # Show services that will be installed
+    local services_list=()
+    if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
+        services_list+=("netbird")
+    fi
+    if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
+        services_list+=("cloudflared")
+    fi
+    
+    if [[ ${#services_list[@]} -gt 0 ]]; then
+        local services_display
+        services_display=$(IFS=,; echo "${services_list[*]}")
+        confirm_msg+="Installing Services: ${services_display}\n"
+    else
+        confirm_msg+="Installing Services: None\n"
+    fi
+    
+    confirm_msg+="\nProceed with deployment?"
     
     if ! whiptail --backtitle "ClawCMD Deployment" \
         --title "Confirm Deployment" \
