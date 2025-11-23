@@ -275,9 +275,9 @@ main() {
     
     if [[ "${NETBIRD_ENABLED:-0}" == "1" ]]; then
         if [[ -z "${NETBIRD_SETUP_KEY:-}" ]]; then
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure NetBird: ${BLUE}pct exec ${CT_ID} -- netbird up --setup-key <KEY>${NC}     ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure NetBird: ${BLUE}pct exec ${CT_ID} -- netbird up --setup-key <KEY>${NC}            ${CYAN}║${NC}"
         else
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NetBird status: ${BLUE}pct exec ${CT_ID} -- netbird status${NC}                   ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NetBird status: ${BLUE}pct exec ${CT_ID} -- netbird status${NC}                      ${CYAN}║${NC}"
         fi
     fi
     
@@ -285,7 +285,7 @@ main() {
         if [[ -z "${CLOUDFLARED_TOKEN:-}" ]]; then
             echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Configure Cloudflared: ${BLUE}pct exec ${CT_ID} -- cloudflared service install <TOKEN>${NC} ${CYAN}║${NC}"
         else
-            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}    ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}     ${CYAN}║${NC}"
         fi
     fi
     

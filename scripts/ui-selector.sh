@@ -66,12 +66,12 @@ echo_default_settings() {
         local template_display
         template_display=$(basename "${CT_TEMPLATE}" 2>/dev/null || echo "${CT_TEMPLATE}")
         local template_storage_display="${TEMPLATE_STORAGE:-local}"
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_storage_display}/${template_display}${CL} (where templates are stored)"
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${template_storage_display}/${template_display}${CL}"
     elif [[ -n "${TEMPLATE_STORAGE:-}" ]]; then
-        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${TEMPLATE_STORAGE}/N/A${CL} (where templates are stored)"
+        echo -e "${TEMPLATE}${BOLD}${DGN}Template: ${BGN}${TEMPLATE_STORAGE}/N/A${CL}"
     fi
     if [[ -n "${STORAGE_POOL:-}" ]]; then
-        echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${STORAGE_POOL}${CL} (where container disk will be saved)"
+        echo -e "${STORAGE}${BOLD}${DGN}Container Storage Pool: ${BGN}${STORAGE_POOL}${CL}"
     fi
     echo -e "${NETWORK}${BOLD}${DGN}Network: ${BGN}${CT_NETWORK:-dhcp}${CL}"
     

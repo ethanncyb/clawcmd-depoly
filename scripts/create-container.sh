@@ -149,6 +149,9 @@ create_container() {
     # Add onboot
     pct_args+=("--onboot" "1")
     
+    # Add console mode (shell)
+    pct_args+=("--cmode" "shell")
+    
     # Add tags if specified (properly quoted to handle semicolons)
     if [[ -n "${CT_TAGS:-}" ]]; then
         pct_args+=("--tags" "${CT_TAGS}")
