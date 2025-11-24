@@ -83,6 +83,9 @@ echo_default_settings() {
     if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
         services_list+=("cloudflared")
     fi
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        services_list+=("nginxproxymanager")
+    fi
     
     if [[ ${#services_list[@]} -gt 0 ]]; then
         local services_display
@@ -144,9 +147,9 @@ select_template() {
         log_warning "No templates found in ${template_storage}, checking all storages..." >&2
         local all_storages
         if command -v timeout &> /dev/null; then
-            all_storages=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+            all_storages=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -v '^$' || echo "")
         else
-            all_storages=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+            all_storages=$(pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -v '^$' || echo "")
         fi
         
         while IFS= read -r storage; do
@@ -321,17 +324,17 @@ select_storage_pool() {
     
     # Method 1: Try pvesm status with timeout (most reliable)
     if command -v timeout &> /dev/null; then
-        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
     else
-        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
+        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -vE "^(vztmpl|iso)$" | grep -v '^$' || echo "")
     fi
     
     # Method 2: If pvesm fails, try pvesh API (ProxmoxVE pattern)
     if [[ -z "$storage_pools" ]] && command -v pvesh &> /dev/null; then
         if command -v timeout &> /dev/null; then
-            storage_pools=$(timeout 5 pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
+            storage_pools=$(timeout 5 pvesh get /storage --output-format json 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
         else
-            storage_pools=$(pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
+            storage_pools=$(pvesh get /storage --output-format json 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -vE "^(vztmpl|iso)$" || echo "")
         fi
     fi
     
@@ -512,10 +515,11 @@ get_next_available_ctid() {
     echo "$current_id"
 }
 
-# Select services to install (NetBird, Cloudflare Tunnel, or both)
+# Select services to install (NetBird, Cloudflare Tunnel, Nginx Proxy Manager)
 select_services() {
     local netbird_selected="${NETBIRD_ENABLED:-0}"
     local cloudflared_selected="${CLOUDFLARED_ENABLED:-0}"
+    local nginxproxymanager_selected="${NGINXPROXYMANAGER_ENABLED:-0}"
     
     # Build checklist options
     local checklist_options=()
@@ -534,10 +538,18 @@ select_services() {
         checklist_options+=("cloudflared" "Cloudflare Tunnel - Secure tunnel to Cloudflare network" "OFF")
     fi
     
+    # Nginx Proxy Manager option (OFF by default)
+    if [[ "$nginxproxymanager_selected" == "1" ]]; then
+        checklist_options+=("nginxproxymanager" "Nginx Proxy Manager - Web-based reverse proxy manager" "ON")
+    else
+        checklist_options+=("nginxproxymanager" "Nginx Proxy Manager - Web-based reverse proxy manager" "OFF")
+    fi
+    
     if ! command -v whiptail &> /dev/null; then
-        log_warning "whiptail not available, using defaults: NetBird=ON, Cloudflare=ON" >&2
+        log_warning "whiptail not available, using defaults: NetBird=ON, Cloudflare=ON, NginxProxyManager=OFF" >&2
         NETBIRD_ENABLED=1
         CLOUDFLARED_ENABLED=1
+        NGINXPROXYMANAGER_ENABLED=0
         return 0
     fi
     
@@ -545,7 +557,7 @@ select_services() {
     selected_services=$(whiptail --backtitle "ClawCMD Deployment" \
         --title "Select Services" \
         --checklist "Choose which services to install in the container:\n\nUse SPACE to select/deselect, TAB to navigate, ENTER to confirm." \
-        15 70 2 \
+        18 70 3 \
         "${checklist_options[@]}" \
         3>&1 1>&2 2>&3) || {
         log_error "Service selection cancelled" >&2
@@ -555,6 +567,7 @@ select_services() {
     # Reset service flags
     NETBIRD_ENABLED=0
     CLOUDFLARED_ENABLED=0
+    NGINXPROXYMANAGER_ENABLED=0
     
     # Parse selected services
     if echo "$selected_services" | grep -q "netbird"; then
@@ -571,9 +584,16 @@ select_services() {
         echo -e "${NETWORK}${BOLD}${DGN}Cloudflare Tunnel: ${BGN}Not Selected${CL}" >&2
     fi
     
+    if echo "$selected_services" | grep -q "nginxproxymanager"; then
+        NGINXPROXYMANAGER_ENABLED=1
+        echo -e "${NETWORK}${BOLD}${DGN}Nginx Proxy Manager: ${BGN}Selected${CL}" >&2
+    else
+        echo -e "${NETWORK}${BOLD}${DGN}Nginx Proxy Manager: ${BGN}Not Selected${CL}" >&2
+    fi
+    
     # Warn if no services selected
-    if [[ "${NETBIRD_ENABLED:-0}" == "0" && "${CLOUDFLARED_ENABLED:-0}" == "0" ]]; then
-        log_warning "No services selected. Container will be created without NetBird or Cloudflare Tunnel." >&2
+    if [[ "${NETBIRD_ENABLED:-0}" == "0" && "${CLOUDFLARED_ENABLED:-0}" == "0" && "${NGINXPROXYMANAGER_ENABLED:-0}" == "0" ]]; then
+        log_warning "No services selected. Container will be created without any additional services." >&2
     fi
     
     echo "" >&2
@@ -590,17 +610,17 @@ select_template_storage() {
     
     # Method 1: Try pvesm status with timeout
     if command -v timeout &> /dev/null; then
-        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+        storage_pools=$(timeout 5 pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -v '^$' || echo "")
     else
-        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $2=="active" {print $1}' | grep -v '^$' || echo "")
+        storage_pools=$(pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}' | grep -v '^$' || echo "")
     fi
     
     # Method 2: If pvesm fails, try pvesh API
     if [[ -z "$storage_pools" ]] && command -v pvesh &> /dev/null; then
         if command -v timeout &> /dev/null; then
-            storage_pools=$(timeout 5 pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
+            storage_pools=$(timeout 5 pvesh get /storage --output-format json 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
         else
-            storage_pools=$(pvesh get /storage 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
+            storage_pools=$(pvesh get /storage --output-format json 2>/dev/null | grep -oP '"storage":\s*"\K[^"]+' | grep -v '^$' || echo "")
         fi
     fi
     
@@ -930,6 +950,9 @@ default_config() {
     fi
     if [[ "${CLOUDFLARED_ENABLED:-0}" == "1" ]]; then
         services_list+=("cloudflared")
+    fi
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        services_list+=("nginxproxymanager")
     fi
     
     if [[ ${#services_list[@]} -gt 0 ]]; then

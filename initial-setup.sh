@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ClawCMD - Initial Infrastructure Setup Script
+# Initial Infrastructure Setup Script
 # Main deployment script for the club's main infrastructure
 # 
 # Purpose: First-time setup for new infrastructure or after Proxmox reset
@@ -155,6 +155,7 @@ main() {
         export CT_OS CT_VERSION CT_TEMPLATE TEMPLATE_STORAGE
         export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
         export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export NGINXPROXYMANAGER_ENABLED
         export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
         export USE_UI=0
         
@@ -200,6 +201,7 @@ main() {
         export CT_OS CT_VERSION CT_TEMPLATE TEMPLATE_STORAGE
         export NETBIRD_ENABLED NETBIRD_MANAGEMENT_URL NETBIRD_SETUP_KEY
         export CLOUDFLARED_ENABLED CLOUDFLARED_TOKEN
+        export NGINXPROXYMANAGER_ENABLED
         export INSTALL_PROXMOX_TOOLS="${INSTALL_PROXMOX_TOOLS:-1}"
     else
         export USE_UI=0
@@ -251,6 +253,14 @@ main() {
         log_info "=== Step 3: Cloudflared installation skipped ==="
     fi
     
+    # Step 4: Install Nginx Proxy Manager (if enabled)
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        log_info "=== Step 4: Installing Nginx Proxy Manager ==="
+        bash "${SCRIPTS_DIR}/install-nginxproxymanager.sh"
+    else
+        log_info "=== Step 4: Nginx Proxy Manager installation skipped ==="
+    fi
+    
     # Update container notes with final service information
     log_info "=== Updating Container Notes ==="
     set_container_notes "$CT_ID" 1
@@ -287,6 +297,16 @@ main() {
         else
             echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check Cloudflared status: ${BLUE}pct exec ${CT_ID} -- systemctl status cloudflared${NC}     ${CYAN}║${NC}"
         fi
+    fi
+    
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        if [[ "$container_ip" != "N/A" ]]; then
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Access Nginx Proxy Manager: ${BLUE}http://${container_ip}:81${NC}                          ${CYAN}║${NC}"
+            echo -e "${CYAN}║${NC}     Default login: ${YELLOW}admin@example.com${NC} / ${YELLOW}changeme${NC}                                    ${CYAN}║${NC}"
+        else
+            echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Access Nginx Proxy Manager: ${BLUE}http://<container-ip>:81${NC}                              ${CYAN}║${NC}"
+        fi
+        echo -e "${CYAN}║${NC}  ${GREEN}•${NC} Check NPM status: ${BLUE}pct exec ${CT_ID} -- systemctl status npm${NC}                      ${CYAN}║${NC}"
     fi
     
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"

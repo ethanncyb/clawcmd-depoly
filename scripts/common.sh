@@ -105,6 +105,11 @@ build_tags() {
         tags="${tags};cloudflared"
     fi
     
+    # Add nginxproxymanager tag if enabled
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        tags="${tags};nginxproxymanager"
+    fi
+    
     echo "$tags"
 }
 
@@ -153,6 +158,17 @@ set_container_notes() {
         fi
     else
         notes+="<li>❌ <strong>Cloudflare Tunnel</strong> - Disabled</li>"
+    fi
+    
+    if [[ "${NGINXPROXYMANAGER_ENABLED:-0}" == "1" ]]; then
+        notes+="<li>✅ <strong>Nginx Proxy Manager</strong> - Enabled</li>"
+        if [[ "$update_after_services" == "1" && -n "$container_ip" ]]; then
+            notes+="<li>   Access: <a href='http://${container_ip}:81'>http://${container_ip}:81</a></li>"
+            notes+="<li>   Default: admin@example.com / changeme</li>"
+            notes+="<li>   Status: Check with <code>pct exec ${ctid} -- systemctl status npm</code></li>"
+        fi
+    else
+        notes+="<li>❌ <strong>Nginx Proxy Manager</strong> - Disabled</li>"
     fi
     
     notes+="</ul>"

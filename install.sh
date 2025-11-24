@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# ClawCMD - One-Liner Installation Script
+# One-Liner Installation Script
 # This script can be run directly from GitHub to clone and deploy the infrastructure
 #
-# Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/ethanncyb/clawcmd-depoly/refs/heads/main/install.sh)"
+# Usage: bash -c "$(curl -fsSL https://raw.githubusercontent.com/claw-command/clawcmd-deploy/refs/heads/main/install.sh)"
 #
 # This script will:
 # 1. Install essential tools (tmux, iftop, htop) on Proxmox host
@@ -22,7 +22,7 @@ readonly NC='\033[0m' # No Color
 
 # GitHub repository URL (update this with your actual repo)
 # You can override this by setting GITHUB_REPO environment variable
-GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethanncyb/clawcmd-depoly.git}"
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/claw-command/clawcmd-deploy.git}"
 REPO_DIR="${REPO_DIR:-/opt/clawcmd-deploy}"
 
 # Repository subdirectory (if the clawcmd-deploy folder is in a subdirectory)

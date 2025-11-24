@@ -30,7 +30,7 @@ install_tools() {
     
     # Install tools
     log_info "Installing tmux, iftop, htop..."
-    apt-get install -y tmux iftop htop || {
+    apt-get install -y tmux iftop htop vim || {
         log_error "Failed to install tools"
         exit 1
     }
